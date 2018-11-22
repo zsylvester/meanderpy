@@ -39,13 +39,15 @@ class ChannelBelt:
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W; D = channel.D
         k = 1.0 # constant in HK equation
-        xc = []
+        xc = [] # initialize cutoff coordinates
+        # determine age of last channel:
         if len(self.cl_times)>0:
             last_cl_time = self.cl_times[-1]
         else:
             last_cl_time = 0
         dx, dy, ds, s = compute_derivatives(x,y)
         slope = np.gradient(z)/ds
+        # padding at the beginning can be shorter than padding atthe downstream end:
         pad1 = int(pad/10.0)
         if pad1<5:
             pad1 = 5
@@ -64,30 +66,31 @@ class ChannelBelt:
             # calculate new centerline coordinates:
             dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
             dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
+            # adjust x and y coordinates (this is the migration):
             x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1]*dy_ds*dt  
             y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
             # find and execute cutoffs:
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) 
-            dx, dy, ds, s = compute_derivatives(x,y)
+            dx, dy, ds, s = compute_derivatives(x,y) # recompute derivatives
             # resample centerline so that 'deltas' is roughly constant
             # [parametric spline representation of curve; note that there is *no* smoothing]
             tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
             unew = np.linspace(0,1,1+s[-1]/deltas) # vector for resampling
             out = scipy.interpolate.splev(unew,tck) # resampling
-            x, y, z = out[0], out[1], out[2]
-            dx, dy, ds, s = compute_derivatives(x,y)
+            x, y, z = out[0], out[1], out[2] # assign new coordinate values
+            dx, dy, ds, s = compute_derivatives(x,y) # recompute derivatives
             # incision:
             slope = np.gradient(z)/ds
             # slope-dependent erosion:
             z = z + kv*dens*9.81*D*slope*dt         
             if len(xc)>0: # save cutoff data
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
-                cutoff = Cutoff(xc,yc,zc,W,D)
+                cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
                 self.cutoffs.append(cutoff)
-            # plotting and saving intermediate centerlines:
+            # saving intermediate centerlines:
             if np.mod(itn,saved_ts)==0:
                 self.cl_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
-                channel = Channel(x,y,z,W,D)
+                channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
         return self
 
