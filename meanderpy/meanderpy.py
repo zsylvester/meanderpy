@@ -35,7 +35,21 @@ class ChannelBelt:
         self.cutoff_times = cutoff_times
 
     def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens):
-        channel = self.channels[-1]
+        """
+        function for computing migration rates along channel centerlines and moving the centerlines accordingly
+        inputs:
+        nit - number of iterations
+        saved_ts - which time steps will be saved
+        deltas - distance between nodes on centerline
+        pad - padding (number of nodepoints along centerline)
+        crdist - threshold distance at which cutoffs occur
+        Cf - dimensionless Chezy friction factor
+        kl - migration rate constant (m/s)
+        kv - vertical slope-dependent erosion rate constant (m/s)
+        dt - time step (s)
+        dens - density of fluid (kg/m3)
+        """
+        channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W; D = channel.D
         k = 1.0 # constant in HK equation
@@ -47,13 +61,13 @@ class ChannelBelt:
             last_cl_time = 0
         dx, dy, ds, s = compute_derivatives(x,y)
         slope = np.gradient(z)/ds
-        # padding at the beginning can be shorter than padding atthe downstream end:
+        # padding at the beginning can be shorter than padding at the downstream end:
         pad1 = int(pad/10.0)
         if pad1<5:
             pad1 = 5
         omega = -1.0 # constant in curvature calculation (Howard and Knutson, 1984)
         gamma = 2.5 # from Ikeda et al., 1981 and Howard and Knutson, 1984
-        f = FloatProgress(min=1,max=nit)
+        f = FloatProgress(min=1,max=nit) # progress bar
         display(f)
         for itn in range(nit): # main loop
             f.value += 1
@@ -66,7 +80,7 @@ class ChannelBelt:
             # calculate new centerline coordinates:
             dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
             dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
-            # adjust x and y coordinates (this is the migration):
+            # adjust x and y coordinates (this *is* the migration):
             x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1]*dy_ds*dt  
             y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
             # find and execute cutoffs:
@@ -87,12 +101,11 @@ class ChannelBelt:
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
                 self.cutoffs.append(cutoff)
-            # saving intermediate centerlines:
+            # saving centerlines:
             if np.mod(itn,saved_ts)==0:
                 self.cl_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
-        return self
 
     def plot(self,plot_type,pb_age,ob_age):
         cot = self.cutoff_times
