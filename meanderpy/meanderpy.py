@@ -12,7 +12,12 @@ import numba
 import matplotlib.colors as mcolors
 
 class Channel:
+    """class for Channel objects"""
     def __init__(self,x,y,z,W,D):
+        """initialize Channel object
+        x, y, z  - coordinates of centerline
+        W - channel width
+        D - channel depth"""
         self.x = x
         self.y = y
         self.z = z
@@ -20,7 +25,12 @@ class Channel:
         self.D = D
 
 class Cutoff:
+    """class for Cutoff objects"""
     def __init__(self,x,y,z,W,D):
+        """initialize Cutoff object
+        x, y, z  - coordinates of centerline
+        W - channel width
+        D - channel depth"""
         self.x = x
         self.y = y
         self.z = z
@@ -28,15 +38,20 @@ class Cutoff:
         self.D = D
 
 class ChannelBelt:
+    """class for ChannelBelt objects"""
     def __init__(self, channels, cutoffs, cl_times, cutoff_times):
+        """initialize ChannelBelt object
+        channels - list of Channel objects
+        cutoffs - list of Cutoff objects
+        cl_times - list of ages of Channel objects
+        cutoff_times - list of ages of Cutoff objects"""
         self.channels = channels
         self.cutoffs = cutoffs
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
     def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens):
-        """
-        function for computing migration rates along channel centerlines and moving the centerlines accordingly
+        """function for computing migration rates along channel centerlines and moving the centerlines accordingly
         inputs:
         nit - number of iterations
         saved_ts - which time steps will be saved
@@ -47,8 +62,7 @@ class ChannelBelt:
         kl - migration rate constant (m/s)
         kv - vertical slope-dependent erosion rate constant (m/s)
         dt - time step (s)
-        dens - density of fluid (kg/m3)
-        """
+        dens - density of fluid (kg/m3)"""
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W; D = channel.D
@@ -108,6 +122,10 @@ class ChannelBelt:
                 self.channels.append(channel)
 
     def plot(self,plot_type,pb_age,ob_age):
+        """plot ChannelBelt object
+        plot_type - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
+        pb_age - age of point bars (in years) at which they get covered by vegetation
+        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation"""
         cot = self.cutoff_times
         sclt = self.cl_times
         times = np.sort(np.hstack((cot,sclt)))
@@ -170,8 +188,16 @@ class ChannelBelt:
         return fig
 
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
+    """generate straight Channel object with some noise added that can serve
+    as input for initializing a ChannelBelt object
+    W - channel width
+    D - channel depth
+    Sl - channel gradient
+    deltas - distance between nodes on centerline
+    pad - padding (number of nodepoints along centerline)
+    n_bends - approximate number of bends to be simulated"""
     noisy_len = n_bends*10*W/2.0 # length of noisy part of initial centerline
-    pad1 = int(pad/10.0)
+    pad1 = int(pad/10.0) # padding at upstream end can be shorter than padding on downstream end
     if pad1<5:
         pad1 = 5
     x = np.linspace(0, noisy_len+(pad+pad1)*deltas, int(noisy_len/deltas+pad+pad1)+1) # x coordinate
@@ -182,16 +208,22 @@ def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
     return Channel(x,y,z,W,D)
 
 @numba.jit(nopython=True) # use Numba to speed up the heaviest computation
-def compute_migration_rate(pd,ns,ds,alpha,omega,gamma,R0):
+def compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0):
+    """compute migration rate as weighted sum of upstream curvatures
+    pad - padding (number of nodepoints along centerline)
+    ns - number of points in centerline
+    ds - distances between points in centerline
+    omega - constant in HK model
+    gamma - constant in HK model
+    R0 - nominal migration rate (dimensionless curvature * migration rate constant)"""
     R1 = np.zeros(ns) # preallocate adjusted channel migration rate
-    pd1 = int(pd/10.0)
-    if pd1<5:
-        pd1 = 5
-    for i in range(pd1,ns-pd):
-        # si2 = np.cumsum(ds[i:i-pd:-1]) # distance along centerline, backwards from current point
+    pad1 = int(pad/10.0) # padding at upstream end can be shorter than padding on downstream end
+    if pad1<5:
+        pad1 = 5
+    for i in range(pad1,ns-pad):
         si2 = np.cumsum(ds[i:0:-1]) # distance along centerline, backwards from current point
         G = np.exp(-alpha*si2) # convolution vector
-        R1[i] = omega*R0[i] + gamma*np.sum(R0[i:0:-1]*G)/np.sum(G)
+        R1[i] = omega*R0[i] + gamma*np.sum(R0[i:0:-1]*G)/np.sum(G) # main equation
     return R1
 
 def compute_derivatives(x,y):
