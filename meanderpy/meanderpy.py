@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.interpolate
-import pandas as pd
 from scipy.spatial import distance
 import colormaps as cm
 from matplotlib.colors import LinearSegmentedColormap
@@ -144,7 +143,6 @@ class ChannelBelt:
         if plot_type == 'morph':
             pb_crit = len(times[times<times[-1]-pb_age])/float(len(times))
             ob_crit = len(times[times<times[-1]-ob_age])/float(len(times))
-            #c = mcolors.ColorConverter().to_rgb
             green = (106/255.0,159/255.0,67/255.0) # vegetation color
             pb_color = (189/255.0,153/255.0,148/255.0) # point bar color
             ob_color = (15/255.0,58/255.0,65/255.0) # oxbow color
