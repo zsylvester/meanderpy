@@ -1,4 +1,3 @@
-# meanderpy
 <img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_logo.svg" width="300">
 
 ## Simple model of meander migration
