@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="meanderpy",
-    version="1.0.0",
+    version="0.1.0",
     author="Zoltan Sylvester",
     author_email="zoltan.sylvester@beg.utexas.edu",
     description="A simple model of meander migration",
@@ -17,10 +17,10 @@ setuptools.setup(
     install_requires=['numpy','matplotlib','seaborn',
         'scipy','ipywidgets','numba','ipython']
     classifiers=[
-        "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        'Intended Audience :: Science/Research',
+        "License :: OSI Approved :: Apache License",
         "Operating System :: OS Independent",
     ],
 )
