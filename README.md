@@ -13,5 +13,5 @@ The initial Channel object can be created using the 'generate_initial_channel' f
 
 ChannelBelt objects can be visualized using the 'plot' method. This creates a map of all the channels and cutoffs in the channel belt; there are two styles of plotting: a 'stratigraphic' view and a 'morphologic' view (see below). The morphologic view tries to account for the fact that older point bars and oxbow lakes tend to be gradually covered with vegetation. 
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_strat_vs_morph.png" width="600">
+<img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_strat_vs_morph.png" width="800">
 
