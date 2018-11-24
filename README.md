@@ -14,6 +14,25 @@ ch = mp.generate_initial_channel(W,D,Sl,deltas,pad,n_bends) # initialize channel
 chb = mp.ChannelBelt(channels=[ch],cutoffs=[],cl_times=[0.0],cutoff_times=[]) # create channel belt object
 ```
 
+A reasonable set of input parameters are as follows:
+
+```python
+W = 200.0                    # channel width (m)
+D = 16.0                     # channel depth (m)
+pad = 100                    # padding (number of nodepoints along centerline)
+deltas = 50.0                # sampling distance along centerline
+nit = 1500                   # number of iterations
+Cf = 0.03                    # dimensionless Chezy friction factor
+crdist = W                   # threshold distance at which cutoffs occur
+kl = 60.0/(365*24*60*60.0)   # migration rate constant (m/s)
+kv =  3*10*5.0E-13           # vertical slope-dependent erosion rate constant (m/s)
+dt = 2*0.05*365*24*60*60.0   # time step (s)
+dens = 1000                  # density of water (kg/m3)
+saved_ts = 20                # which time steps will be saved
+n_bends = 100                 # approximate number of bends you want to model
+Sl = 0.0                     # initial slope (setting this to non-zero results in instabilities in long runs)
+```
+
 The core functionality of 'meanderpy' is built into the 'migrate' method of the 'ChannelBelt' class. This is the function that computes migration rates and moves the channel centerline to its new position. The last Channel of a ChannelBelt can be further migrated through applying the 'migrate' method to the ChannelBelt instance.
 
 ```python
