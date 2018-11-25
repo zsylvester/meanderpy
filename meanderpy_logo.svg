@@ -9,6 +9,8 @@
 	.st3{stroke:#231F20;}
 	.st4{font-family:'Helvetica';}
 	.st5{font-size:105px;}
+	.st6{fill:none;stroke:#000000;stroke-width:2;}
+	.st7{fill:none;stroke:#000000;stroke-width:2;stroke-miterlimit:10;}
 </style>
 <rect x="1" y="1.1" class="st0" width="595.3" height="454.5"/>
 <rect x="1" y="455.6" class="st1" width="595.3" height="140.8"/>
@@ -1040,5 +1042,7 @@
 	218.5,357.3 210.5,354.2 202.3,351.1 194,348.2 185.4,345.5 176.6,343.1 167.5,341.2 158.2,339.7 148.7,338.8 139,338.6 
 	129.2,339.2 119.4,340.7 109.7,343.2 100.2,346.6 91.1,350.9 82.5,356.2 74.5,362.4 67.1,369.5 60.6,377.2 54.9,385.6 50.1,394.4 
 	46.3,403.7 43.4,413.2 41.4,423 40.3,432.8 40.2,442.6 40.8,452.3 41.3,455.6 74.9,455.6 74.7,454.6 "/>
-<text transform="matrix(1 0 0 1 35.4652 556.3088)" class="st4 st5">meanderpy</text>
+<text transform="matrix(1 0 0 1 35.4652 553.3087)" class="st4 st5">meanderpy</text>
+<rect x="1" y="1.1" class="st6" width="595.3" height="454.5"/>
+<rect x="1" y="455.6" class="st7" width="595.3" height="140.8"/>
 </svg>
