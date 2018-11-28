@@ -194,7 +194,17 @@ class ChannelBelt:
         return fig
 
     def create_movie(self,xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,*end_time):
-        """method for creating movie frames that capture the plan-view evolution of a channel belt through time"""
+        """method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time
+        movie has to be assembled from the PNG file after this method is applied
+        xmin - value of x coodinate on the left side of frame
+        xmax - value of x coordinate on right side of frame
+        plot_type = - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
+        filename - first few characters of the output filenames
+        dirname - name of directory where output files should be written
+        pb_age - age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
+        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
+        scale - scaling factor (e.g., 2) that determines how many times larger you want the frame to be, compared to the default scaling of the figure
+        """
         sclt = np.array(self.cl_times)
         if len(end_time)>0:
             sclt = sclt[sclt<=end_time]
@@ -259,6 +269,13 @@ def compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0):
     return R1
 
 def compute_derivatives(x,y):
+    """function for computing first derivatives of a curve (centerline)
+    x,y are cartesian coodinates of the curve
+    outputs:
+    dx - first derivative of x coordinate
+    dy - first derivative of y coordinate
+    ds - distances between consecutive points along the curve
+    s - cumulative distance along the curve"""
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)      
     ds = np.sqrt(dx**2+dy**2)
@@ -266,6 +283,14 @@ def compute_derivatives(x,y):
     return dx, dy, ds, s
 
 def compute_curvature(x,y):
+    """function for computing first derivatives and curvature of a curve (centerline)
+    x,y are cartesian coodinates of the curve
+    outputs:
+    dx - first derivative of x coordinate
+    dy - first derivative of y coordinate
+    ds - distances between consecutive points along the curve
+    s - cumulative distance along the curve
+    curvature - curvature of the curve (in 1/units of x and y)"""
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)      
     ds = np.sqrt(dx**2+dy**2)
@@ -293,7 +318,7 @@ def make_colormap(seq):
     return mcolors.LinearSegmentedColormap('CustomMap', cdict)
 
 def kth_diag_indices(a,k):
-    # function for finding diagonal indices with k offset (from Stackexchange)
+    """function for finding diagonal indices with k offset (from Stackexchange)"""
     rows, cols = np.diag_indices_from(a)
     if k<0:
         return rows[:k], cols[-k:]
@@ -303,6 +328,11 @@ def kth_diag_indices(a,k):
         return rows, cols
     
 def find_cutoffs(x,y,crdist,deltas):
+    """function for identifying locations of cutoffs along a centerline
+    and the indices of the segments that will become part of the oxbows
+    x,y - coordinates of centerline
+    crdist - critical cutoff distance
+    deltas - distance between neighboring points along the centerline"""
     diag_blank_width = int((crdist+20*deltas)/deltas)
     # distance matrix for centerline points:
     dist = distance.cdist(np.array([x,y]).T,np.array([x,y]).T)
@@ -317,12 +347,18 @@ def find_cutoffs(x,y,crdist,deltas):
     return ind1, ind2 # return indices of cutoff points and cutoff coordinates
 
 def cut_off_cutoffs(x,y,z,s,crdist,deltas):
+    """function for executing cutoffs - removing oxbows from centerline and storing cutoff coordinates
+    x,y - coordinates of centerline
+    crdist - critical cutoff distance
+    deltas - distance between neighboring points along the centerline
+    outputs:
+    x,y,z - updated coordinates of centerline
+    xc, yc, zc - lists with coordinates of cutoff segments"""
     xc = []
     yc = []
     zc = []
     ind1, ind2 = find_cutoffs(x,y,crdist,deltas) # initial check for cutoffs
     while len(ind1)>0:
-        #if (s[ind2[0]+1]-s[ind1[0]])/crdist>8.0:
         xc.append(x[ind1[0]:ind2[0]+1]) # x coordinates of cutoff
         yc.append(y[ind1[0]:ind2[0]+1]) # y coordinates of cutoff
         zc.append(z[ind1[0]:ind2[0]+1]) # z coordinates of cutoff
@@ -333,6 +369,11 @@ def cut_off_cutoffs(x,y,z,s,crdist,deltas):
     return x,y,z,xc,yc,zc
 
 def get_channel_banks(x,y,W):
+    """function for finding coordinates of channel banks, given a centerline and a channel width
+    x,y - coordinates of centerline
+    W - channel width
+    outputs:
+    xm, ym - coordinates of channel banks (both left and right banks)"""
     x1 = x.copy()
     y1 = y.copy()
     x2 = x.copy()
