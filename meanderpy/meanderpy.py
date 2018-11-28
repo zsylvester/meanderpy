@@ -49,7 +49,7 @@ class ChannelBelt:
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens):
+    def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens,*D):
         """function for computing migration rates along channel centerlines and moving the centerlines accordingly
         inputs:
         nit - number of iterations
@@ -64,7 +64,11 @@ class ChannelBelt:
         dens - density of fluid (kg/m3)"""
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
-        W = channel.W; D = channel.D
+        W = channel.W;
+        if len(D)==0: 
+            D = channel.D
+        else:
+            D = D[0]
         k = 1.0 # constant in HK equation
         xc = [] # initialize cutoff coordinates
         # determine age of last channel:
@@ -120,13 +124,17 @@ class ChannelBelt:
                 channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
 
-    def plot(self,plot_type,pb_age,ob_age):
+    def plot(self,plot_type,pb_age,ob_age,*end_time):
         """plot ChannelBelt object
         plot_type - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
         pb_age - age of point bars (in years) at which they get covered by vegetation
-        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation"""
-        cot = self.cutoff_times
-        sclt = self.cl_times
+        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation
+        end_time (optional) - age of last channel to be plotted (in years)"""
+        cot = np.array(self.cutoff_times)
+        sclt = np.array(self.cl_times)
+        if len(end_time)>0:
+            cot = cot[cot<=end_time]
+            sclt = sclt[sclt<=end_time]
         times = np.sort(np.hstack((cot,sclt)))
         times = np.unique(times)
         order = 0 # variable for ordering objects in plot
@@ -163,7 +171,7 @@ class ChannelBelt:
                         plt.fill(xm,ym,facecolor=pb_cmap(i/float(len(times)-1)))
                 else:
                     order = order+1
-                    plt.fill(xm,ym,sns.xkcd_rgb["light tan"],edgecolor='k',linewidth=0.25,zorder=order) #,alpha=alpha_pb[i])              
+                    plt.fill(xm,ym,sns.xkcd_rgb["light tan"],edgecolor='k',linewidth=0.25,zorder=order)
             if times[i] in cot:
                 ind = np.where(cot==times[i])[0][0]
                 for j in range(0,len(self.cutoffs[ind].x)):
@@ -174,16 +182,42 @@ class ChannelBelt:
                         plt.fill(xm,ym,color=ob_cmap(i/float(len(times)-1)))
                     else:
                         order = order+1
-                        plt.fill(xm,ym,sns.xkcd_rgb["ocean blue"],edgecolor='k',linewidth=0.25,zorder=order) #,alpha=alpha_ob[i])
-        x1 = self.channels[-1].x
-        y1 = self.channels[-1].y
-        xm, ym = get_channel_banks(x1,y1,self.channels[-1].W)
+                        plt.fill(xm,ym,sns.xkcd_rgb["ocean blue"],edgecolor='k',linewidth=0.25,zorder=order)
+        x1 = self.channels[len(sclt)-1].x
+        y1 = self.channels[len(sclt)-1].y
+        xm, ym = get_channel_banks(x1,y1,self.channels[len(sclt)-1].W)
         order = order+1
         plt.fill(xm,ym,color=(16/255.0,73/255.0,90/255.0),zorder=order) #,edgecolor='k')
         plt.axis('equal')
         plt.xlim(xmin,xmax)
         plt.ylim(ymin,ymax)
         return fig
+
+    def create_movie(self,xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,*end_time):
+        """method for creating movie frames that capture the plan-view evolution of a channel belt through time"""
+        sclt = np.array(self.cl_times)
+        if len(end_time)>0:
+            sclt = sclt[sclt<=end_time]
+        channels = self.channels[:len(sclt)]
+        ymax = 0
+        for i in range(len(channels)):
+            ymax = max(ymax, np.max(np.abs(channels[i].y)))
+        ymax = ymax+2*channels[0].W # add a bit of space on top and bottom
+        ymin = -1*ymax
+        for i in range(0,len(sclt)):
+            fig = self.plot(plot_type,pb_age,ob_age,sclt[i])
+            fig_height = scale*fig.get_figheight()
+            fig_width = (xmax-xmin)*fig_height/(ymax-ymin)
+            fig.set_figwidth(fig_width)
+            fig.set_figheight(fig_height)
+            fig.gca().set_xlim(xmin,xmax)
+            fig.gca().set_xticks([])
+            fig.gca().set_yticks([])
+            plt.plot([xmin+200, xmin+200+5000],[ymin+200, ymin+200], 'k', linewidth=2)
+            plt.text(xmin+200+2000, ymin+200+100, '5 km', fontsize=14)
+            fname = dirname+filename+'%03d.png'%(i)
+            fig.savefig(fname, bbox_inches='tight')
+            plt.close()
 
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
     """generate straight Channel object with some noise added that can serve
