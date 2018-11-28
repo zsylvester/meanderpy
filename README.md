@@ -50,3 +50,8 @@ fig = chb.plot('strat',20,60)
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_strat_vs_morph.png" width="1000">
 
+A series of movie frames (in PNG format) can be created using the 'create_movie' method:
+
+```python
+create_movie(xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,end_time)
+```
