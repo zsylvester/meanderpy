@@ -53,5 +53,6 @@ fig = chb.plot('strat',20,60)
 A series of movie frames (in PNG format) can be created using the 'create_movie' method:
 
 ```python
-create_movie(xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,end_time)
+chb.create_movie(xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,end_time)
 ```
+The frames have to be assembled into an animation outside of 'meanderpy'.
