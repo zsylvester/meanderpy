@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.interpolate
 from scipy.spatial import distance
-import colormaps as cm
 from matplotlib.colors import LinearSegmentedColormap
 from ipywidgets import FloatProgress
 from IPython.display import display
