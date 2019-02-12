@@ -3,11 +3,16 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import scipy.interpolate
 from scipy.spatial import distance
+from scipy import ndimage
+from PIL import Image, ImageDraw
+from skimage import measure
+from skimage import morphology
 from matplotlib.colors import LinearSegmentedColormap
 from ipywidgets import FloatProgress
 from IPython.display import display
 import numba
 import matplotlib.colors as mcolors
+import matplotlib.gridspec as gridspec
 
 class Channel:
     """class for Channel objects"""
@@ -34,6 +39,62 @@ class Cutoff:
         self.z = z
         self.W = W
         self.D = D
+
+class ChannelBelt3D:
+    """class for 3D models of channel belts"""
+    def __init__(self, model_type, topo, strat, facies, facies_code, dx):
+        self.model_type = model_type
+        self.topo = topo
+        self.strat = strat
+        self.facies = facies
+        self.dx = dx
+
+    def plot_xsection(self, xsec, colors, ve):
+        # colors = [[0.5,0.25,0],[0.9,0.9,0],[0.5,0.25,0]]
+        strat = self.strat
+        dx = self.dx
+        fig1 = plt.figure(figsize=(20,5))
+        ax1 = fig1.add_subplot(111)
+        r,c,ts = np.shape(strat)
+        Xv = dx * np.arange(0,r)
+        for xloc in range(xsec,xsec+1,1):
+            # ax1.cla()
+            # ax2.cla()
+            # ax3.cla()
+            for i in range(0,ts-1,3):
+                X1 = np.concatenate((Xv, Xv[::-1]))  
+                Y1 = np.concatenate((strat[:,xloc,i], strat[::-1,xloc,i+1])) 
+                Y2 = np.concatenate((strat[:,xloc,i+1], strat[::-1,xloc,i+2]))
+                Y3 = np.concatenate((strat[:,xloc,i+2], strat[::-1,xloc,i+3]))
+                if self.model_type == 'submarine':
+                    ax1.fill(X1, Y1, facecolor=colors[2], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                    ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
+                    ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
+                if self.model_type == 'fluvial':
+                    ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
+                    ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                    ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
+            ax1.set_xlim(0,dx*(r-1))
+            ax1.set_aspect(ve, adjustable='datalim')
+        fig2 = plt.figure()
+        ax2 = fig2.add_subplot(111)
+        ax2.contourf(strat[:,:,ts-1],100,cmap='viridis')
+        # ax2.contour(strat[:,:,ts-1],100,colors='k',linestyles='solid',linewidth=0.1,alpha=0.4)
+        ax2.plot([xloc, xloc],[0,r],'k',linewidth=2)
+        ax2.axis([0,c,0,r])
+        ax2.set_aspect('equal', adjustable='box')        
+        ax2.set_title('final geomorphic surface')
+        ax2.tick_params(bottom='off',top='off',left='off',right='off',labelbottom='off',labelleft='off')
+        fig3 = plt.figure()
+        ax3 = fig3.add_subplot(111)
+        ax3.contourf(strat[:,:,0],100,cmap='viridis')
+        # ax3.contour(strat[:,:,0],100,colors='k',linestyles='solid',linewidth=0.1,alpha=0.4)
+        ax3.plot([xloc, xloc],[0,r],'k',linewidth=2)
+        ax3.axis([0,c,0,r])
+        ax3.set_aspect('equal', adjustable='box')
+        ax3.set_title('basal erosional surface')
+        ax3.tick_params(bottom='off',top='off',left='off',right='off',labelbottom='off',labelleft='off')
+        return fig1,fig2,fig3
 
 class ChannelBelt:
     """class for ChannelBelt objects"""
@@ -75,7 +136,7 @@ class ChannelBelt:
             last_cl_time = self.cl_times[-1]
         else:
             last_cl_time = 0
-        dx, dy, ds, s = compute_derivatives(x,y)
+        dx, dy, dz, ds, s = compute_derivatives(x,y,z)
         slope = np.gradient(z)/ds
         # padding at the beginning can be shorter than padding at the downstream end:
         pad1 = int(pad/10.0)
@@ -101,14 +162,15 @@ class ChannelBelt:
             y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
             # find and execute cutoffs:
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) 
-            dx, dy, ds, s = compute_derivatives(x,y) # recompute derivatives
+            dx, dy, ds, dz, s = compute_derivatives(x,y,z) # recompute derivatives
             # resample centerline so that 'deltas' is roughly constant
             # [parametric spline representation of curve; note that there is *no* smoothing]
             tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
             unew = np.linspace(0,1,1+s[-1]/deltas) # vector for resampling
             out = scipy.interpolate.splev(unew,tck) # resampling
             x, y, z = out[0], out[1], out[2] # assign new coordinate values
-            dx, dy, ds, s = compute_derivatives(x,y) # recompute derivatives
+            # z = np.minimum.accumulate(z)
+            dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
             # incision:
             slope = np.gradient(z)/ds
             # slope-dependent erosion:
@@ -228,6 +290,158 @@ class ChannelBelt:
             fig.savefig(fname, bbox_inches='tight')
             plt.close()
 
+    def build_3d_model(self,model_type,h_mud,levee_width,h,w,dx,delta_s,starttime,endtime):
+        """method for building 3D model from set of centerlines (that are part of a ChannelBelt object)
+        Inputs: 
+        model_type - model type ('fluvial' or 'submarine')
+        h_mud - maximum thickness of overbank mud
+        levee_width - width of overbank mud
+        h - channel depth
+        w - channel width
+        dx - cell size in x and y directions
+        delta_s - sampling distance alogn centerlines
+        starttime - 
+        endtime -
+        Returns: a ChannelBelt3D object
+        """
+        sclt = np.array(self.cl_times)
+        ind1 = np.where(sclt>=starttime)[0][0] 
+        ind2 = np.where(sclt<=endtime)[0][-1]
+        sclt = sclt[ind1:ind2+1]
+        channels = self.channels[ind1:ind2+1]
+        cot = np.array(self.cutoff_times)
+        if len(cot)>0:
+            cfind1 = np.where(cot>=starttime)[0][0] 
+            cfind2 = np.where(cot<=endtime)[0][-1]
+            cot = cot[cfind1:cfind2+1]
+            cutoffs = self.cutoffs[cfind1:cfind2+1]
+        else:
+            cot = []
+            cutoffs = []
+        n_steps = len(sclt) # number of events
+        plt.figure(figsize=(15,4))
+        maxX, minY, maxY = 0, 0, 0
+        for i in range(n_steps): # plot centerlines
+            plt.plot(channels[i].x,channels[i].y,'k')
+            maxX = max(maxX,np.max(channels[i].x))
+            maxY = max(maxY,np.max(channels[i].y))
+            minY = min(minY,np.min(channels[i].y))
+        plt.axis([0,maxX,minY+minY/2.0,maxY+maxY/2.0])
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.tight_layout()
+        pts = np.zeros((2,2))
+        for i in range(0,2):
+            pt = np.asarray(plt.ginput(1))
+            pts[i,:] = pt
+            plt.scatter(pt[0][0],pt[0][1])
+        plt.plot([pts[0,0],pts[1,0],pts[1,0],pts[0,0],pts[0,0]],[pts[0,1],pts[0,1],pts[1,1],pts[1,1],pts[0,1]],'r')
+        xmin = min(pts[0,0],pts[1,0])
+        xmax = max(pts[0,0],pts[1,0])
+        ymin = min(pts[0,1],pts[1,1])
+        ymax = max(pts[0,1],pts[1,1])
+        iwidth = int((xmax-xmin)/dx)
+        iheight = int((ymax-ymin)/dx)
+        topo = np.zeros((iheight,iwidth,4*n_steps)) # array for storing topographic surfaces
+        facies = np.zeros((iheight-1,iwidth-1,4*n_steps)) # array for storing facies
+        # create initial topography:
+        x1 = np.linspace(0,iwidth-1,iwidth)
+        y1 = np.linspace(0,iheight-1,iheight)
+        xv, yv = np.meshgrid(x1,y1)
+        z1 = channels[0].z
+        z1 = z1[(channels[0].x>xmin) & (channels[0].x<xmax)]
+        topoinit = z1[0] - ((z1[0]-z1[-1])/(xmax-xmin))*xv*dx # initial (sloped) topography
+        topo[:,:,0] = topoinit.copy()
+        surf = topoinit.copy()
+        facies[:,:,0] = np.NaN
+        # generate surfaces:
+        f = FloatProgress(min=0,max=n_steps)
+        display(f)
+        for i in range(n_steps):
+            f.value += 1
+            x = channels[i].x
+            y = channels[i].y
+            z = channels[i].z
+            cutoff_ind = []
+            # check if there were cutoffs during the last time step and collect indices in an array:
+            for j in range(len(cot)):
+                if (cot[j] >= sclt[i-1]) & (cot[j] < sclt[i]):
+                    cutoff_ind = np.append(cutoff_ind,j)
+            # create distance map:
+            cl_dist, x_pix, y_pix, z_pix, s_pix, z_map = dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s)
+            if i == 0:
+                cl_dist_prev = cl_dist
+            # erosion:
+            surf = np.minimum(surf,erosion_surface(h,w/dx,cl_dist,z_map))
+            topo[:,:,4*i] = surf # erosional surface
+            facies[:,:,4*i] = np.NaN
+
+            if model_type == 'fluvial':
+                pb = point_bar_surface(surf,cl_dist,z_map,h,w/dx)
+                th = np.maximum(surf,pb)-surf
+                th_oxbows = th.copy()
+                # setting sand thickness to zero at cutoff locations:
+                if len(cutoff_ind)>0:
+                    cutoff_dists = 1e10*np.ones(np.shape(th)) #initialize cutoff_dists with a large number
+                    for j in range(len(cutoff_ind)):
+                        cutoff_dist, cfx_pix, cfy_pix = cl_dist_map(cutoffs[int(cutoff_ind[j])].x[0],cutoffs[int(cutoff_ind[j])].y[0],cutoffs[int(cutoff_ind[j])].z[0],xmin,xmax,ymin,ymax,dx)
+                        cutoff_dists = np.minimum(cutoff_dists,cutoff_dist)
+                    th_oxbows[cutoff_dists>=0.9*w/dx] = 0 # set oxbow fill thickness to zero outside of oxbows
+                    th[cutoff_dists<0.9*w/dx] = 0 # set point bar thickness to zero inside of oxbows
+                    # adding back sand near the channel axis (submarine only):
+                    # th[cl_dist<0.5*w/dx] = bth*(1 - relief[cl_dist<0.5*w/dx]/dcr)
+                else: # no cutoffs
+                    th_oxbows = np.zeros(np.shape(th))
+                th[th<0] = 0 # eliminate negative th values
+                surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
+                topo[:,:,4*i+1] = surf # top of oxbow mud
+                facies[:,:,4*i+1] = 0
+                surf = surf+th # update topographic surface with sand thickness
+                topo[:,:,4*i+2] = surf # top of sand
+                facies[:,:,4*i+2] = 1
+                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx) # mud/levee deposition
+                topo[:,:,4*i+3] = surf # top of levee
+                facies[:,:,4*i+3] = 2
+
+            if model_type == 'submarine':
+                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx) # mud/levee deposition
+                topo[:,:,4*i+1] = surf # top of levee
+                facies[:,:,4*i+1] = 2
+                bth = 10.0; dcr = 10.0
+                # sand thickness:
+                th, relief = sand_surface(surf,bth,dcr,cl_dist,z_map,h)
+                th_oxbows = th.copy()
+                # setting sand thickness to zero at cutoff locations:
+                if len(cutoff_ind)>0:
+                    cutoff_dists = 1e10*np.ones(np.shape(th)) #initialize cutoff_dists with a large number
+                    for j in range(len(cutoff_ind)):
+                        cutoff_dist, cfx_pix, cfy_pix = cl_dist_map(cutoffs[int(cutoff_ind[j])].x[0],cutoffs[int(cutoff_ind[j])].y[0],cutoffs[int(cutoff_ind[j])].z[0],xmin,xmax,ymin,ymax,dx)
+                        cutoff_dists = np.minimum(cutoff_dists,cutoff_dist)
+                    th_oxbows[cutoff_dists>=0.9*w/dx] = 0 # set oxbow fill thickness to zero outside of oxbows
+                    th[cutoff_dists<0.9*w/dx] = 0 # set point bar thickness to zero inside of oxbows
+                    # adding back sand near the channel axis (submarine only):
+                    # th[cl_dist<0.5*w/dx] = bth*(1 - relief[cl_dist<0.5*w/dx]/dcr)
+                else: # no cutoffs
+                    th_oxbows = np.zeros(np.shape(th))
+                th[th<0] = 0 # eliminate negative th values
+                surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
+                topo[:,:,4*i+2] = surf # top of oxbow mud
+                facies[:,:,4*i+2] = 0
+                surf = surf+th # update topographic surface with sand thickness
+                topo[:,:,4*i+3] = surf # top of sand
+                facies[:,:,4*i+3] = 1
+
+            cl_dist_prev = cl_dist.copy()
+        topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
+        strat = topostrat(topo) # create stratigraphic surfaces
+        strat = np.delete(strat, np.arange(4*n_steps+1)[1::4], 2) # get rid of unnecessary stratigraphic surfaces (duplicates)
+        facies = np.delete(facies, np.arange(4*n_steps)[::4], 2) # get rid of unnecessary facies layers (NaNs)
+        if model_type == 'fluvial':
+            facies_code = {0:'oxbow', 1:'point bar', 2:'levee'}
+        if model_type == 'submarine':
+            facies_code = {0:'levee', 1:'oxbow', 2:'channel sand'}
+        chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx)
+        return chb_3d
+
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
     """generate straight Channel object with some noise added that can serve
     as input for initializing a ChannelBelt object
@@ -262,12 +476,12 @@ def compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0):
     if pad1<5:
         pad1 = 5
     for i in range(pad1,ns-pad):
-        si2 = np.cumsum(ds[i:0:-1]) # distance along centerline, backwards from current point
+        si2 = np.hstack((np.array([0]),np.cumsum(ds[i-1::-1])))  # distance along centerline, backwards from current point 
         G = np.exp(-alpha*si2) # convolution vector
-        R1[i] = omega*R0[i] + gamma*np.sum(R0[i:0:-1]*G)/np.sum(G) # main equation
+        R1[i] = omega*R0[i] + gamma*np.sum(R0[i::-1]*G)/np.sum(G) # main equation
     return R1
 
-def compute_derivatives(x,y):
+def compute_derivatives(x,y,z):
     """function for computing first derivatives of a curve (centerline)
     x,y are cartesian coodinates of the curve
     outputs:
@@ -276,10 +490,12 @@ def compute_derivatives(x,y):
     ds - distances between consecutive points along the curve
     s - cumulative distance along the curve"""
     dx = np.gradient(x) # first derivatives
-    dy = np.gradient(y)      
-    ds = np.sqrt(dx**2+dy**2)
+    dy = np.gradient(y)   
+    dz = np.gradient(z)   
+    ds = np.sqrt(dx**2+dy**2+dz**2)
     s = np.cumsum(ds)
-    return dx, dy, ds, s
+    return dx, dy, dz, ds, s
+    dx,dy,dz,ds,s
 
 def compute_curvature(x,y):
     """function for computing first derivatives and curvature of a curve (centerline)
@@ -391,3 +607,218 @@ def get_channel_banks(x,y,W):
     xm = np.hstack((x1,x2[::-1]))
     ym = np.hstack((y1,y2[::-1]))
     return xm, ym
+
+def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
+    # function for centerline rasterization and distance map calculation
+    y = y[(x>xmin) & (x<xmax)]
+    z = z[(x>xmin) & (x<xmax)]
+    x = x[(x>xmin) & (x<xmax)] 
+    dummy,dy,dz,ds,s = compute_derivatives(x,y,z)
+    if len(np.where(ds>2*delta_s)[0])>0:
+        inds = np.where(ds>2*delta_s)[0]
+        inds = np.hstack((0,inds,len(x)))
+        lengths = np.diff(inds)
+        long_segment = np.where(lengths==max(lengths))[0][0]
+        start_ind = inds[long_segment]+1
+        end_ind = inds[long_segment+1]
+        if end_ind<len(x):
+            x = x[start_ind:end_ind]
+            y = y[start_ind:end_ind]
+            z = z[start_ind:end_ind] 
+        else:
+            x = x[start_ind:]
+            y = y[start_ind:]
+            z = z[start_ind:]
+    xdist = xmax - xmin
+    ydist = ymax - ymin
+    iwidth = int((xmax-xmin)/dx)
+    iheight = int((ymax-ymin)/dx)
+    xratio = iwidth/xdist
+    # create list with pixel coordinates:
+    pixels = []
+    for i in range(0,len(x)):
+        px = int(iwidth - (xmax - x[i]) * xratio)
+        py = int(iheight - (ymax - y[i]) * xratio)
+        pixels.append((px,py))
+    # create image and numpy array:
+    img = Image.new("RGB", (iwidth, iheight), "white")
+    draw = ImageDraw.Draw(img)
+    draw.line(pixels, fill="rgb(0, 0, 0)") # draw centerline as black line
+    pix = np.array(img)
+    cl = pix[:,:,0]
+    cl[cl==255] = 1 # set background to 1 (centerline is 0)
+    y_pix,x_pix = np.where(cl==0) 
+    x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
+    # This next block of code is kind of a hack. Looking for, and eliminating, 'bad' pixels.
+    img = np.array(img)
+    img = img[:,:,0]
+    img[img==255] = 1 
+    img1 = morphology.binary_dilation(img, morphology.square(2)).astype(np.uint8)
+    if len(np.where(img1==0)[0])>0:
+        x_pix, y_pix = eliminate_bad_pixels(img,img1)
+        x_pix,y_pix = order_cl_pixels(x_pix,y_pix) 
+    img1 = morphology.binary_dilation(img, np.array([[1,0,1],[1,1,1]],dtype=np.uint8)).astype(np.uint8)
+    if len(np.where(img1==0)[0])>0:
+        x_pix, y_pix = eliminate_bad_pixels(img,img1)
+        x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
+    img1 = morphology.binary_dilation(img, np.array([[1,0,1],[0,1,0],[1,0,1]],dtype=np.uint8)).astype(np.uint8)
+    if len(np.where(img1==0)[0])>0:
+        x_pix, y_pix = eliminate_bad_pixels(img,img1)
+        x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
+    #redo the distance calculation (because x_pix and y_pix do not always contain all the points in cl):
+    cl[cl==0] = 1
+    cl[y_pix,x_pix] = 0
+    cl_dist, inds = ndimage.distance_transform_edt(cl, return_indices=True)
+    dx,dy,dz,ds,s = compute_derivatives(x,y,z)
+    # dx_pix,dy_pix,ds_pix,s_pix = compute_derivatives(x_pix,y_pix) # needed for s_pix only
+    dx_pix = np.gradient(x_pix)
+    dy_pix = np.gradient(y_pix)
+    ds_pix = np.sqrt(dx_pix**2+dy_pix**2)
+    s_pix = np.cumsum(ds_pix)
+    f = scipy.interpolate.interp1d(s,z)
+    snew = s_pix*s[-1]/s_pix[-1]
+    if snew[-1]>s[-1]:
+        snew[-1]=s[-1]
+    snew[snew<s[0]]=s[0]
+    z_pix = f(snew)
+    # create along-channel distance map:
+    z_map = np.zeros(np.shape(cl_dist)) 
+    z_map[y_pix,x_pix]=z_pix
+    xinds=inds[1,:,:]
+    yinds=inds[0,:,:]
+    for i in range(0,len(x_pix)):
+        z_map[(xinds==x_pix[i]) & (yinds==y_pix[i])] = z_pix[i]
+    return cl_dist, x_pix, y_pix, z_pix, s_pix, z_map
+
+def erosion_surface(h,w,cl_dist,z):
+    surf = z + (4*h/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
+    return surf
+
+def point_bar_surface(surf,cl_dist,z,h,w):
+    pb = z-h*np.exp(-(cl_dist**2)/(2*(w*0.33)**2))
+    return pb
+
+def sand_surface(surf,bth,dcr,cl_dist,z_map,h):
+    relief = abs(surf-z_map+h)
+    relief = abs(relief-np.amin(relief))
+    th = bth * (1 - relief/dcr) # bed thickness inversely related to relief
+    th[th<0] = 0.0
+    return th, relief
+
+def mud_surface(h_mud,levee_width,cl_dist,w):
+    surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
+    surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
+    surf = np.minimum(surf1,surf2)
+    surf3 = h_mud + (4*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
+    surf = np.minimum(surf,surf3)
+    surf[surf<0] = 0;
+    return surf
+
+def topostrat(topo):
+    r,c,ts = np.shape(topo)
+    strat = np.copy(topo)
+    for i in (range(0,ts)):
+        strat[:,:,i] = np.amin(topo[:,:,i:], axis=2)
+    return strat
+
+def cl_dist_map(x,y,z,xmin,xmax,ymin,ymax,dx):
+    # function for centerline rasterization and distance map calculation (does not return zmap!)
+    y = y[(x>xmin) & (x<xmax)]
+    z = z[(x>xmin) & (x<xmax)]
+    x = x[(x>xmin) & (x<xmax)]    
+    xdist = xmax - xmin
+    ydist = ymax - ymin
+    iwidth = int((xmax-xmin)/dx)
+    iheight = int((ymax-ymin)/dx)
+    xratio = iwidth/xdist
+    # create list with pixel coordinates:
+    pixels = []
+    for i in range(0,len(x)):
+        px = int(iwidth - (xmax - x[i]) * xratio)
+        py = int(iheight - (ymax - y[i]) * xratio)
+        pixels.append((px,py))
+    # create image and numpy array:
+    img = Image.new("RGB", (iwidth, iheight), "white")
+    draw = ImageDraw.Draw(img)
+    draw.line(pixels, fill="rgb(0, 0, 0)") # draw centerline as black line
+    pix = np.array(img)
+    cl = pix[:,:,0]
+    cl[cl==255] = 1 # set background to 1 (centerline is 0)
+    # calculate Euclidean distance map:
+    cl_dist, inds = ndimage.distance_transform_edt(cl, return_indices=True)
+    y_pix,x_pix = np.where(cl==0)
+    return cl_dist, x_pix, y_pix
+
+def eliminate_bad_pixels(img,img1):
+    x_ind = np.where(img1==0)[1][0]
+    y_ind = np.where(img1==0)[0][0]
+    img[y_ind:y_ind+2,x_ind:x_ind+2] = np.ones(1,).astype(np.uint8)
+    all_labels = measure.label(img,background=1,connectivity=2)
+    cl=all_labels.copy()
+    cl[cl==2]=0
+    cl[cl>0]=1
+    y_pix,x_pix = np.where(cl==1)
+    return x_pix, y_pix
+
+def order_cl_pixels(x_pix,y_pix):
+    dist = distance.cdist(np.array([x_pix,y_pix]).T,np.array([x_pix,y_pix]).T)
+    dist[np.diag_indices_from(dist)]=100.0
+    ind = np.argmin(x_pix) # select starting point on left side of image
+    clinds = [ind]
+    count = 0
+    while count<len(x_pix):
+        t = dist[ind,:].copy()
+        if len(clinds)>2:
+            t[clinds[-2]]=t[clinds[-2]]+100.0
+            t[clinds[-3]]=t[clinds[-3]]+100.0
+        ind = np.argmin(t)
+        clinds.append(ind)
+        count=count+1
+    x_pix = x_pix[clinds]
+    y_pix = y_pix[clinds]
+    return x_pix,y_pix
+
+# functions for plotting results
+
+def plot_surface(topo,ts,ci,ax,vmin,vmax,dx):
+    # function for plotting contoured surface
+    cax = ax.contourf(topo[:,:,ts*3+2].T,[i for i in range(vmin,vmax,5)],cmap=viridis,vmin=vmin,vmax=vmax)
+    #plt.colorbar()
+    ax.contour(topo[:,:,ts*3+2].T,[i for i in range(vmin,vmax,5)],colors='k',linestyles='solid',linewidth=0.5)
+    ax.grid(b=None)
+    ax.tick_params(axis='x',which='both',bottom='off',top='off',labelbottom='off')
+    ax.tick_params(axis='y',which='both',left='off',right='off',labelleft='off')
+    ax.plot([0,1000/dx],[-30,-30],linewidth=3,color='k')
+    ax.text(300/dx,-39,'1 km')
+    ax.set_ylim(ax.get_ylim()[::-1]) # invert y axis
+    return cax
+
+def create_random_section_2_points(ax,strat,x1,x2,y1,y2,s1,dx,ds):
+    r, c, nt = np.shape(strat)
+    dist = dx*((x2-x1)**2 + (y2-y1)**2)**0.5
+    s2 = s1*dx+dist
+    num = int(dist/float(ds))
+    Xrand, Yrand, Srand = np.linspace(x1,x2,num), np.linspace(y1,y2,num), np.linspace(s1*dx,s2,num)
+    for i in range(1,nt-2,4):
+        strat_i = scipy.ndimage.map_coordinates(strat[:,:,i], np.vstack((Yrand,Xrand)))
+        strat_ii = scipy.ndimage.map_coordinates(strat[:,:,i+1], np.vstack((Yrand,Xrand)))
+        strat_iii = scipy.ndimage.map_coordinates(strat[:,:,i+2], np.vstack((Yrand,Xrand)))
+        strat_iiii = scipy.ndimage.map_coordinates(strat[:,:,i+3], np.vstack((Yrand,Xrand)))
+        X1 = np.concatenate((Srand, Srand[::-1]))  
+        Y1 = np.concatenate((strat_i, strat_ii[::-1]))
+        Y2 = np.concatenate((strat_ii, strat_iii[::-1]))
+        Y3 = np.concatenate((strat_iii, strat_iiii[::-1])) 
+        ax.fill(X1, Y1, facecolor=[0.5,0.25,0], linewidth=0.5)#, 'edgecolor', 'none') # oxbow
+        ax.fill(X1, Y2, facecolor=[0.9,0.9,0], linewidth=0.5)#, 'edgecolor', 'none') # point bar
+        ax.fill(X1, Y3, facecolor=[0.5,0.25,0], linewidth=0.5)#, 'edgecolor', 'none') # levee
+        
+def create_random_section_n_points(strat,x1,x2,y1,y2,dx,ds):
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    if type(x1)==int:
+        create_random_section_2_points(ax,strat,x1,x2,y1,y2,dx,ds)
+    else:
+        dx1,dy1,ds1,s1 = compute_s_coord(x1,y1)
+        for i in range(len(x1)):
+            create_random_section_2_points(ax,strat,x1[i],x2[i],y1[i],y2[i],s1[i],dx,ds)
+
