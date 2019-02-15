@@ -109,7 +109,7 @@ class ChannelBelt:
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens,*D):
+    def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens,t1,t2,t3,aggr_factor,*D):
         """function for computing migration rates along channel centerlines and moving the centerlines accordingly
         inputs:
         nit - number of iterations
@@ -121,7 +121,12 @@ class ChannelBelt:
         kl - migration rate constant (m/s)
         kv - vertical slope-dependent erosion rate constant (m/s)
         dt - time step (s)
-        dens - density of fluid (kg/m3)"""
+        dens - density of fluid (kg/m3)
+        t1 - time step when incision starts
+        t2 - time step when lateral migration starts
+        t3 - time step when aggradation starts
+        aggr_factor - aggradation factor
+        D - channel depth"""
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W;
@@ -174,7 +179,13 @@ class ChannelBelt:
             # incision:
             slope = np.gradient(z)/ds
             # slope-dependent erosion:
-            z = z + kv*dens*9.81*D*slope*dt         
+            if (itn>t1) & (itn<=t2): 
+                z = z + kv*dens*9.81*D*slope*dt # slope-dependent incision
+            if (itn>t2) & (itn<=t3): # lateral migration
+                # I am not sure why the 0.5 is needed here, but its' needed...:
+                z = z + kv*dens*9.81*D*slope*dt - 0.5*kv*dens*9.81*D*np.median(slope)*dt 
+            if (itn>t3): # aggradation
+                z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt      
             if len(xc)>0: # save cutoff data
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
@@ -290,7 +301,7 @@ class ChannelBelt:
             fig.savefig(fname, bbox_inches='tight')
             plt.close()
 
-    def build_3d_model(self,model_type,h_mud,levee_width,h,w,dx,delta_s,starttime,endtime):
+    def build_3d_model(self,model_type,h_mud,levee_width,h,w,bth,dcr,dx,delta_s,starttime,endtime):
         """method for building 3D model from set of centerlines (that are part of a ChannelBelt object)
         Inputs: 
         model_type - model type ('fluvial' or 'submarine')
@@ -298,6 +309,8 @@ class ChannelBelt:
         levee_width - width of overbank mud
         h - channel depth
         w - channel width
+        bth - thickness of channel sand (only used in submarine models)
+        dcr - critical channel depth where sand thickness goes to zero (only used in submarine models)
         dx - cell size in x and y directions
         delta_s - sampling distance alogn centerlines
         starttime - 
@@ -310,7 +323,7 @@ class ChannelBelt:
         sclt = sclt[ind1:ind2+1]
         channels = self.channels[ind1:ind2+1]
         cot = np.array(self.cutoff_times)
-        if len(cot)>0:
+        if (len(cot)>0) & (len(np.where(cot>=starttime)[0])>0) & (len(np.where(cot<=endtime)[0])>0):
             cfind1 = np.where(cot>=starttime)[0][0] 
             cfind2 = np.where(cot<=endtime)[0][-1]
             cot = cot[cfind1:cfind2+1]
@@ -326,7 +339,7 @@ class ChannelBelt:
             maxX = max(maxX,np.max(channels[i].x))
             maxY = max(maxY,np.max(channels[i].y))
             minY = min(minY,np.min(channels[i].y))
-        plt.axis([0,maxX,minY+minY/2.0,maxY+maxY/2.0])
+        plt.axis([0,maxX,3*minY,3*maxY])
         plt.gca().set_aspect('equal', adjustable='box')
         plt.tight_layout()
         pts = np.zeros((2,2))
@@ -387,8 +400,6 @@ class ChannelBelt:
                         cutoff_dists = np.minimum(cutoff_dists,cutoff_dist)
                     th_oxbows[cutoff_dists>=0.9*w/dx] = 0 # set oxbow fill thickness to zero outside of oxbows
                     th[cutoff_dists<0.9*w/dx] = 0 # set point bar thickness to zero inside of oxbows
-                    # adding back sand near the channel axis (submarine only):
-                    # th[cl_dist<0.5*w/dx] = bth*(1 - relief[cl_dist<0.5*w/dx]/dcr)
                 else: # no cutoffs
                     th_oxbows = np.zeros(np.shape(th))
                 th[th<0] = 0 # eliminate negative th values
@@ -403,12 +414,13 @@ class ChannelBelt:
                 facies[:,:,4*i+3] = 2
 
             if model_type == 'submarine':
-                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx) # mud/levee deposition
+                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
                 topo[:,:,4*i+1] = surf # top of levee
                 facies[:,:,4*i+1] = 2
-                bth = 10.0; dcr = 10.0
                 # sand thickness:
                 th, relief = sand_surface(surf,bth,dcr,cl_dist,z_map,h)
+                th[th<0] = 0 # eliminate negative th values
+                th[cl_dist>0.6*w/dx] = 0 # eliminate sand outside of channel
                 th_oxbows = th.copy()
                 # setting sand thickness to zero at cutoff locations:
                 if len(cutoff_ind)>0:
@@ -422,7 +434,6 @@ class ChannelBelt:
                     # th[cl_dist<0.5*w/dx] = bth*(1 - relief[cl_dist<0.5*w/dx]/dcr)
                 else: # no cutoffs
                     th_oxbows = np.zeros(np.shape(th))
-                th[th<0] = 0 # eliminate negative th values
                 surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
                 topo[:,:,4*i+2] = surf # top of oxbow mud
                 facies[:,:,4*i+2] = 0
@@ -705,14 +716,19 @@ def sand_surface(surf,bth,dcr,cl_dist,z_map,h):
     th[th<0] = 0.0
     return th, relief
 
-def mud_surface(h_mud,levee_width,cl_dist,w):
+def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
     surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
     surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
     surf = np.minimum(surf1,surf2)
     surf3 = h_mud + (4*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     surf = np.minimum(surf,surf3)
     surf[surf<0] = 0;
-    return surf
+    relief = abs(topo-z_map)
+    fth = 100.0
+    th = 1 - relief/fth
+    th[th<0] = 0
+    th = surf * th
+    return th
 
 def topostrat(topo):
     r,c,ts = np.shape(topo)
