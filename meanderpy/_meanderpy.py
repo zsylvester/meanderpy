@@ -42,12 +42,13 @@ class Cutoff:
 
 class ChannelBelt3D:
     """class for 3D models of channel belts"""
-    def __init__(self, model_type, topo, strat, facies, facies_code, dx):
+    def __init__(self, model_type, topo, strat, facies, facies_code, dx, channels):
         self.model_type = model_type
         self.topo = topo
         self.strat = strat
         self.facies = facies
         self.dx = dx
+        self.channels = channels
 
     def plot_xsection(self, xsec, colors, ve):
         # colors = [[0.5,0.25,0],[0.9,0.9,0],[0.5,0.25,0]]
@@ -84,7 +85,7 @@ class ChannelBelt3D:
         ax2.axis([0,c,0,r])
         ax2.set_aspect('equal', adjustable='box')        
         ax2.set_title('final geomorphic surface')
-        ax2.tick_params(bottom='off',top='off',left='off',right='off',labelbottom='off',labelleft='off')
+        ax2.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
         fig3 = plt.figure()
         ax3 = fig3.add_subplot(111)
         ax3.contourf(strat[:,:,0],100,cmap='viridis')
@@ -93,7 +94,7 @@ class ChannelBelt3D:
         ax3.axis([0,c,0,r])
         ax3.set_aspect('equal', adjustable='box')
         ax3.set_title('basal erosional surface')
-        ax3.tick_params(bottom='off',top='off',left='off',right='off',labelbottom='off',labelleft='off')
+        ax3.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
         return fig1,fig2,fig3
 
 class ChannelBelt:
@@ -179,13 +180,21 @@ class ChannelBelt:
             # incision:
             slope = np.gradient(z)/ds
             # slope-dependent erosion:
-            if (itn>t1) & (itn<=t2): 
-                z = z + kv*dens*9.81*D*slope*dt # slope-dependent incision
+            if (itn>t1) & (itn<=t2):
+                if np.min(np.abs(slope))!=0:
+                    z = z + kv*dens*9.81*D*slope*dt # slope-dependent incision
+                else:
+                    z = z - 0.005*4
             if (itn>t2) & (itn<=t3): # lateral migration
-                # I am not sure why the 0.5 is needed here, but its' needed...:
-                z = z + kv*dens*9.81*D*slope*dt - 0.5*kv*dens*9.81*D*np.median(slope)*dt 
+                if np.min(np.abs(slope))!=0:
+                    z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
+                else:
+                    z = z
             if (itn>t3): # aggradation
-                z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt      
+                if np.min(np.abs(slope))!=0:
+                    z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
+                else:
+                    z = z + 0.005*4
             if len(xc)>0: # save cutoff data
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
@@ -301,7 +310,7 @@ class ChannelBelt:
             fig.savefig(fname, bbox_inches='tight')
             plt.close()
 
-    def build_3d_model(self,model_type,h_mud,levee_width,h,w,bth,dcr,dx,delta_s,starttime,endtime):
+    def build_3d_model(self,model_type,h_mud,levee_width,h,w,bth,dcr,dx,delta_s,starttime,endtime,xmin,xmax,ymin,ymax):
         """method for building 3D model from set of centerlines (that are part of a ChannelBelt object)
         Inputs: 
         model_type - model type ('fluvial' or 'submarine')
@@ -332,26 +341,27 @@ class ChannelBelt:
             cot = []
             cutoffs = []
         n_steps = len(sclt) # number of events
-        plt.figure(figsize=(15,4))
-        maxX, minY, maxY = 0, 0, 0
-        for i in range(n_steps): # plot centerlines
-            plt.plot(channels[i].x,channels[i].y,'k')
-            maxX = max(maxX,np.max(channels[i].x))
-            maxY = max(maxY,np.max(channels[i].y))
-            minY = min(minY,np.min(channels[i].y))
-        plt.axis([0,maxX,3*minY,3*maxY])
-        plt.gca().set_aspect('equal', adjustable='box')
-        plt.tight_layout()
-        pts = np.zeros((2,2))
-        for i in range(0,2):
-            pt = np.asarray(plt.ginput(1))
-            pts[i,:] = pt
-            plt.scatter(pt[0][0],pt[0][1])
-        plt.plot([pts[0,0],pts[1,0],pts[1,0],pts[0,0],pts[0,0]],[pts[0,1],pts[0,1],pts[1,1],pts[1,1],pts[0,1]],'r')
-        xmin = min(pts[0,0],pts[1,0])
-        xmax = max(pts[0,0],pts[1,0])
-        ymin = min(pts[0,1],pts[1,1])
-        ymax = max(pts[0,1],pts[1,1])
+        if xmin == 0: # plot centerlines and define model domain
+            plt.figure(figsize=(15,4))
+            maxX, minY, maxY = 0, 0, 0
+            for i in range(n_steps): # plot centerlines
+                plt.plot(channels[i].x,channels[i].y,'k')
+                maxX = max(maxX,np.max(channels[i].x))
+                maxY = max(maxY,np.max(channels[i].y))
+                minY = min(minY,np.min(channels[i].y))
+            plt.axis([0,maxX,minY-10*w,maxY+10*w])
+            plt.gca().set_aspect('equal', adjustable='box')
+            plt.tight_layout()
+            pts = np.zeros((2,2))
+            for i in range(0,2):
+                pt = np.asarray(plt.ginput(1))
+                pts[i,:] = pt
+                plt.scatter(pt[0][0],pt[0][1])
+            plt.plot([pts[0,0],pts[1,0],pts[1,0],pts[0,0],pts[0,0]],[pts[0,1],pts[0,1],pts[1,1],pts[1,1],pts[0,1]],'r')
+            xmin = min(pts[0,0],pts[1,0])
+            xmax = max(pts[0,0],pts[1,0])
+            ymin = min(pts[0,1],pts[1,1])
+            ymax = max(pts[0,1],pts[1,1])
         iwidth = int((xmax-xmin)/dx)
         iheight = int((ymax-ymin)/dx)
         topo = np.zeros((iheight,iwidth,4*n_steps)) # array for storing topographic surfaces
@@ -369,6 +379,9 @@ class ChannelBelt:
         # generate surfaces:
         f = FloatProgress(min=0,max=n_steps)
         display(f)
+        channels3D = []
+        x_pixs = []
+        y_pixs = []
         for i in range(n_steps):
             f.value += 1
             x = channels[i].x
@@ -380,7 +393,7 @@ class ChannelBelt:
                 if (cot[j] >= sclt[i-1]) & (cot[j] < sclt[i]):
                     cutoff_ind = np.append(cutoff_ind,j)
             # create distance map:
-            cl_dist, x_pix, y_pix, z_pix, s_pix, z_map = dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s)
+            cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x1, y1, z1 = dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s)
             if i == 0:
                 cl_dist_prev = cl_dist
             # erosion:
@@ -409,18 +422,22 @@ class ChannelBelt:
                 surf = surf+th # update topographic surface with sand thickness
                 topo[:,:,4*i+2] = surf # top of sand
                 facies[:,:,4*i+2] = 1
-                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx) # mud/levee deposition
+                # surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx) # mud/levee deposition
+                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf)
                 topo[:,:,4*i+3] = surf # top of levee
                 facies[:,:,4*i+3] = 2
+                channels3D.append(Channel(x1,y1,z1,w,h))
+                x_pixs.append(x_pix)
+                y_pixs.append(y_pix)
 
             if model_type == 'submarine':
-                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
+                surf = surf + mud_surface(h_mud[i],levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
                 topo[:,:,4*i+1] = surf # top of levee
                 facies[:,:,4*i+1] = 2
                 # sand thickness:
                 th, relief = sand_surface(surf,bth,dcr,cl_dist,z_map,h)
                 th[th<0] = 0 # eliminate negative th values
-                th[cl_dist>0.6*w/dx] = 0 # eliminate sand outside of channel
+                th[cl_dist>1.0*w/dx] = 0 # eliminate sand outside of channel
                 th_oxbows = th.copy()
                 # setting sand thickness to zero at cutoff locations:
                 if len(cutoff_ind)>0:
@@ -450,8 +467,8 @@ class ChannelBelt:
             facies_code = {0:'oxbow', 1:'point bar', 2:'levee'}
         if model_type == 'submarine':
             facies_code = {0:'levee', 1:'oxbow', 2:'channel sand'}
-        chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx)
-        return chb_3d
+        chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx,channels3D)
+        return chb_3d, xmin, xmax, ymin, ymax
 
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
     """generate straight Channel object with some noise added that can serve
@@ -506,7 +523,6 @@ def compute_derivatives(x,y,z):
     ds = np.sqrt(dx**2+dy**2+dz**2)
     s = np.cumsum(ds)
     return dx, dy, dz, ds, s
-    dx,dy,dz,ds,s
 
 def compute_curvature(x,y):
     """function for computing first derivatives and curvature of a curve (centerline)
@@ -699,7 +715,7 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     yinds=inds[0,:,:]
     for i in range(0,len(x_pix)):
         z_map[(xinds==x_pix[i]) & (yinds==y_pix[i])] = z_pix[i]
-    return cl_dist, x_pix, y_pix, z_pix, s_pix, z_map
+    return cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x, y, z
 
 def erosion_surface(h,w,cl_dist,z):
     surf = z + (4*h/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
@@ -720,7 +736,7 @@ def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
     surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
     surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
     surf = np.minimum(surf1,surf2)
-    surf3 = h_mud + (4*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
+    surf3 = h_mud + (4*1.5*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     surf = np.minimum(surf,surf3)
     surf[surf<0] = 0;
     relief = abs(topo-z_map)
