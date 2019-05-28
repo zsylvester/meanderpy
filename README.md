@@ -4,10 +4,6 @@
 
 'meanderpy' is a Python module that implements a simple numerical model of meandering, the one described by Howard & Knutson in their 1984 paper ["Sufficient Conditions for River Meandering: A Simulation Approach"](https://agupubs.onlinelibrary.wiley.com/doi/abs/10.1029/WR020i011p01659). This is a kinematic model that is based on computing migration rate as the weighted sum of upstream curvatures; flow velocity does not enter the equation. Curvature is transformed into a 'nominal migration rate' through multiplication with a migration rate (or erodibility) constant; in the  Howard & Knutson (1984) paper this is a nonlinear relationship based on field observations that suggested a complex link between curvature and migration rate. In the 'meanderpy' module we use a simple linear relationship between the nominal migration rate and curvature, as recent work using time-lapse satellite imagery suggests that high curvatures result in high migration rates (Sylvester et al., in review).
 
-## Installation
-
-pip install meanderpy
-
 ## Usage
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_sketch.png" width="600">
@@ -62,6 +58,41 @@ A series of movie frames (in PNG format) can be created using the 'create_movie'
 chb.create_movie(xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,end_time)
 ```
 The frames have to be assembled into an animation outside of 'meanderpy'.
+
+### Build 3D model
+
+'meanderpy' includes the functionality to build 3D stratigraphic models. However, this functionality is decoupled from the centerline generation, mainly because it would be computationally expensive to generate surfaces for all centerlines, along their whole lengths. Instead, the 3D model is only created after a Channelbelt object has been generated; a model domain is defined either through specifying the xmin, xmax, ymin, ymax coordinates, or through clicking the upper left and lower right corners of the domain, using the matplotlib 'ginput' command:
+
+<img src="https://github.com/zsylvester/meanderpy/blob/master/define_3D_domain.png" width="600">
+
+Important parameters for a fluvial 3D model are the following:
+
+```python
+Sl = 0.0              # initial slope (matters more for submarine channels than rivers)
+t1 = 500              # time step when incision starts
+t2 = 700              # time step when lateral migration starts
+t3 = 1400             # time step when aggradation starts
+aggr_factor = 4e-9    # aggradation rate (in m/s, it kicks in after t3)
+h_mud = 0.4           # thickness of overbank deposit for each time step
+dx = 10.0             # gridcell size in meters
+```
+The first five of these parameters have to be specified before creating the centerlines. The initial slope (Sl) in a fluvial model is best set to zero, as typical gradients in meandering rivers are very low and artifacts associated with the along-channel slope variation will be visible in the model surfaces [this is not an issue with steeper submarine channel models]. t1 is the time step when incision starts; before t1, the centerlines are given time to develop some sinuosity. At time t2, incision stops and the channel only migrates laterally until t3; this is the time when aggradation starts. The rate of incision (if Sl is set to zero) is set by the quantity 'kv x dens x 9.81 x D x dt x 0.01' (as if the slope was 0.01, but of course it is not), where kv is the vertical incision rate constant. This approach does not require a new incision rate constant. The rate of aggradation is set by 'aggr_factor x dt' (so 'aggr_factor' must be a small number, as it is measured in m/s). 'h_mud' is the maximum thickness of the overbank deposit in each time step, and 'dx' is the gridcell size in meters. 'h_mud' has to be large enough that it matches the channel aggradation rate; weird artefacts are generated otherwise.
+
+The Jupyter notebook has two examples for building 3D models, for a fluvial and a submarine channel system. The 'plot_xsection' method can be used to create a cross section at a given x (pixel) coordinate (this is the first argument of the function). The second argument determines the colors that are used for the different facies (in this case: brown, yellow, brown RGB values). The third argument is the vertical exaggeration.
+
+```python
+fig1,fig2,fig3 = chb_3d.plot_xsection(343, [[0.5,0.25,0],[0.9,0.9,0],[0.5,0.25,0]], 4)
+```
+This function also plots the basal erosional surface and the final topographic surface. An example topographic surface and a zoomed-in cross section are shown below.
+
+<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_map.png" width="400">
+
+<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="600">
+
+
+## Acknowledgements
+
+While the code in 'meanderpy' was written relatively recently, many of the ideas implemented in it come from numerous discussions with Carlos Pirmez, Alessandro Cantelli, Matt Wolinsky, Nick Howes, and Jake Covault. Funding for this work comes from the [Quantitative Clastics Laboratory industrial consortium at the Bureau of Economic Geology, The University of Texas at Austin](http://www.beg.utexas.edu/qcl).
 
 ## License
 
