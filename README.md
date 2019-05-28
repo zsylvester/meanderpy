@@ -87,12 +87,12 @@ This function also plots the basal erosional surface and the final topographic s
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_map.png" width="400">
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="600">
+<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="900">
 
 
 ## Acknowledgements
 
-While the code in 'meanderpy' was written relatively recently, many of the ideas implemented in it come from numerous discussions with Carlos Pirmez, Alessandro Cantelli, Matt Wolinsky, Nick Howes, and Jake Covault. Funding for this work comes from the [Quantitative Clastics Laboratory industrial consortium at the Bureau of Economic Geology, The University of Texas at Austin](http://www.beg.utexas.edu/qcl).
+While the code in 'meanderpy' was written relatively recently, many of the ideas implemented in it come from numerous discussions with Carlos Pirmez, Alessandro Cantelli, Matt Wolinsky, Nick Howes, and Jake Covault. Funding for this work comes from the [Quantitative Clastics Laboratory industrial consortium](http://www.beg.utexas.edu/qcl) at the Bureau of Economic Geology, The University of Texas at Austin.
 
 ## License
 
