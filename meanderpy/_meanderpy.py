@@ -80,7 +80,7 @@ class ChannelBelt3D:
         fig2 = plt.figure()
         ax2 = fig2.add_subplot(111)
         ax2.contourf(strat[:,:,ts-1],100,cmap='viridis')
-        # ax2.contour(strat[:,:,ts-1],100,colors='k',linestyles='solid',linewidth=0.1,alpha=0.4)
+        ax2.contour(strat[:,:,ts-1],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
         ax2.plot([xloc, xloc],[0,r],'k',linewidth=2)
         ax2.axis([0,c,0,r])
         ax2.set_aspect('equal', adjustable='box')        
@@ -89,7 +89,7 @@ class ChannelBelt3D:
         fig3 = plt.figure()
         ax3 = fig3.add_subplot(111)
         ax3.contourf(strat[:,:,0],100,cmap='viridis')
-        # ax3.contour(strat[:,:,0],100,colors='k',linestyles='solid',linewidth=0.1,alpha=0.4)
+        ax3.contour(strat[:,:,0],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
         ax3.plot([xloc, xloc],[0,r],'k',linewidth=2)
         ax3.axis([0,c,0,r])
         ax3.set_aspect('equal', adjustable='box')
@@ -184,7 +184,7 @@ class ChannelBelt:
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt # slope-dependent incision
                 else:
-                    z = z - 0.005*4
+                    z = z - kv*dens*9.81*D*dt*0.01
             if (itn>t2) & (itn<=t3): # lateral migration
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
@@ -194,7 +194,7 @@ class ChannelBelt:
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
                 else:
-                    z = z + 0.005*4
+                    z = z + aggr_factor*dt
             if len(xc)>0: # save cutoff data
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
