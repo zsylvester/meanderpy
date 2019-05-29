@@ -1,1 +1,2 @@
-from ._meanderpy import Channel, Cutoff, ChannelBelt, generate_initial_channel
+name = "meanderpy"
+from .meanderpy import *
