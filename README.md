@@ -59,7 +59,7 @@ chb.create_movie(xmin,xmax,plot_type,filename,dirname,pb_age,ob_age,scale,end_ti
 ```
 The frames have to be assembled into an animation outside of 'meanderpy'.
 
-### Build 3D model
+## Build 3D model
 
 'meanderpy' includes the functionality to build 3D stratigraphic models. However, this functionality is decoupled from the centerline generation, mainly because it would be computationally expensive to generate surfaces for all centerlines, along their whole lengths. Instead, the 3D model is only created after a Channelbelt object has been generated; a model domain is defined either through specifying the xmin, xmax, ymin, ymax coordinates, or through clicking the upper left and lower right corners of the domain, using the matplotlib 'ginput' command:
 
