@@ -43,15 +43,27 @@ class Cutoff:
 class ChannelBelt3D:
     """class for 3D models of channel belts"""
     def __init__(self, model_type, topo, strat, facies, facies_code, dx, channels):
+        """model_type - can be either 'fluvial' or 'submarine'
+        topo - set of topographic surfaces (3D numpy array)
+        strat - set of stratigraphic surfaces (3D numpy array)
+        facies - facies volume (3D numpy array)
+        facies_code - dictionary of facies codes, e.g. {0:'oxbow', 1:'point bar', 2:'levee'}
+        dx - gridcell size (m)
+        channels - list of channel objects that form 3D model"""
         self.model_type = model_type
         self.topo = topo
         self.strat = strat
         self.facies = facies
+        self.facies_code = facies_code
         self.dx = dx
         self.channels = channels
 
     def plot_xsection(self, xsec, colors, ve):
-        # colors = [[0.5,0.25,0],[0.9,0.9,0],[0.5,0.25,0]]
+        """method for plotting a cross section through a 3D model; also plots map of 
+        basal erosional surface and map of final geomorphic surface
+        xsec - location of cross section along the x-axis (in pixel/ voxel coordinates) 
+        colors - list of RGB values that define the colors for different facies
+        ve - vertical exaggeration"""
         strat = self.strat
         dx = self.dx
         fig1 = plt.figure(figsize=(20,5))
@@ -59,9 +71,6 @@ class ChannelBelt3D:
         r,c,ts = np.shape(strat)
         Xv = dx * np.arange(0,r)
         for xloc in range(xsec,xsec+1,1):
-            # ax1.cla()
-            # ax2.cla()
-            # ax3.cla()
             for i in range(0,ts-1,3):
                 X1 = np.concatenate((Xv, Xv[::-1]))  
                 Y1 = np.concatenate((strat[:,xloc,i], strat[::-1,xloc,i+1])) 
@@ -127,7 +136,7 @@ class ChannelBelt:
         t2 - time step when lateral migration starts
         t3 - time step when aggradation starts
         aggr_factor - aggradation factor
-        D - channel depth"""
+        D - channel depth (m)"""
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W;
@@ -466,7 +475,7 @@ class ChannelBelt:
         if model_type == 'fluvial':
             facies_code = {0:'oxbow', 1:'point bar', 2:'levee'}
         if model_type == 'submarine':
-            facies_code = {0:'levee', 1:'oxbow', 2:'channel sand'}
+            facies_code = {0:'oxbow', 1:'channel sand', 2:'levee'}
         chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx,channels3D)
         return chb_3d, xmin, xmax, ymin, ymax
 
@@ -636,7 +645,18 @@ def get_channel_banks(x,y,W):
     return xm, ym
 
 def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
-    # function for centerline rasterization and distance map calculation
+    """function for centerline rasterization and distance map calculation
+    inputs:
+    x,y,z - coordinates of centerline
+    xmin, xmax, ymin, ymax - x and y coordinates that define the area of interest
+    dx - gridcell size (m)
+    delta_s - distance between points along centerline (m)
+    returns:
+    cl_dist - 
+    x_pix, y_pix, z_pix - 
+    s_pix - 
+    z_map - 
+    x, y, z - """
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
     x = x[(x>xmin) & (x<xmax)] 
@@ -754,7 +774,16 @@ def topostrat(topo):
     return strat
 
 def cl_dist_map(x,y,z,xmin,xmax,ymin,ymax,dx):
-    # function for centerline rasterization and distance map calculation (does not return zmap!)
+    """function for centerline rasterization and distance map calculation (does not return zmap)
+    used for cutoffs only 
+    inputs:
+    x,y,z -
+    xmin,xmax,ymin,ymax -
+    dx -
+    returns:
+    cl_dist -
+    x_pix, y_pix -
+    """
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
     x = x[(x>xmin) & (x<xmax)]    
@@ -809,21 +838,6 @@ def order_cl_pixels(x_pix,y_pix):
     x_pix = x_pix[clinds]
     y_pix = y_pix[clinds]
     return x_pix,y_pix
-
-# functions for plotting results
-
-def plot_surface(topo,ts,ci,ax,vmin,vmax,dx):
-    # function for plotting contoured surface
-    cax = ax.contourf(topo[:,:,ts*3+2].T,[i for i in range(vmin,vmax,5)],cmap=viridis,vmin=vmin,vmax=vmax)
-    #plt.colorbar()
-    ax.contour(topo[:,:,ts*3+2].T,[i for i in range(vmin,vmax,5)],colors='k',linestyles='solid',linewidth=0.5)
-    ax.grid(b=None)
-    ax.tick_params(axis='x',which='both',bottom='off',top='off',labelbottom='off')
-    ax.tick_params(axis='y',which='both',left='off',right='off',labelleft='off')
-    ax.plot([0,1000/dx],[-30,-30],linewidth=3,color='k')
-    ax.text(300/dx,-39,'1 km')
-    ax.set_ylim(ax.get_ylim()[::-1]) # invert y axis
-    return cax
 
 def create_random_section_2_points(ax,strat,x1,x2,y1,y2,s1,dx,ds):
     r, c, nt = np.shape(strat)
