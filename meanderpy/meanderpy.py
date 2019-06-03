@@ -331,8 +331,11 @@ class ChannelBelt:
         dcr - critical channel depth where sand thickness goes to zero (only used in submarine models)
         dx - cell size in x and y directions
         delta_s - sampling distance alogn centerlines
-        starttime - 
-        endtime -
+        starttime - age of centerline that will be used as the first centerline in the model
+        endtime - age of centerline that will be used as the last centerline in the model
+        xmin,xmax,ymin,ymax - x and y coordinates that define the model domain; if xmin is set to zero,
+        a plot of the centerlines is generated and the model domain has to be defined by clicking its upper 
+        left and lower right corners
         Returns: a ChannelBelt3D object
         """
         sclt = np.array(self.cl_times)
@@ -411,7 +414,7 @@ class ChannelBelt:
             facies[:,:,4*i] = np.NaN
 
             if model_type == 'fluvial':
-                pb = point_bar_surface(surf,cl_dist,z_map,h,w/dx)
+                pb = point_bar_surface(cl_dist,z_map,h,w/dx)
                 th = np.maximum(surf,pb)-surf
                 th_oxbows = th.copy()
                 # setting sand thickness to zero at cutoff locations:
@@ -444,7 +447,7 @@ class ChannelBelt:
                 topo[:,:,4*i+1] = surf # top of levee
                 facies[:,:,4*i+1] = 2
                 # sand thickness:
-                th, relief = sand_surface(surf,bth,dcr,cl_dist,z_map,h)
+                th, relief = sand_surface(surf,bth,dcr,z_map,h)
                 th[th<0] = 0 # eliminate negative th values
                 th[cl_dist>1.0*w/dx] = 0 # eliminate sand outside of channel
                 th_oxbows = th.copy()
@@ -652,11 +655,11 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     dx - gridcell size (m)
     delta_s - distance between points along centerline (m)
     returns:
-    cl_dist - 
-    x_pix, y_pix, z_pix - 
-    s_pix - 
-    z_map - 
-    x, y, z - """
+    cl_dist - distance map (distance from centerline)
+    x_pix, y_pix, z_pix - x,y, and z pixel coordinates of the centerline
+    s_pix - along-channel distance in pixels
+    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
+    x, y, z - x,y,z centerline coordinates clipped to the 3D model domain"""
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
     x = x[(x>xmin) & (x<xmax)] 
@@ -728,7 +731,7 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
         snew[-1]=s[-1]
     snew[snew<s[0]]=s[0]
     z_pix = f(snew)
-    # create along-channel distance map:
+    # create z_map:
     z_map = np.zeros(np.shape(cl_dist)) 
     z_map[y_pix,x_pix]=z_pix
     xinds=inds[1,:,:]
@@ -738,21 +741,60 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     return cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x, y, z
 
 def erosion_surface(h,w,cl_dist,z):
+    """function for creating a parabolic erosional surface
+    inputs:
+    h - geomorphic channel depth (m)
+    w - geomorphic channel width (in pixels, as cl_dist is also given in pixels)
+    cl_dist - distance map (distance from centerline)
+    z - reference elevation (m)
+    returns:
+    surf - map of the quadratic erosional surface (m)
+    """
     surf = z + (4*h/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     return surf
 
-def point_bar_surface(surf,cl_dist,z,h,w):
+def point_bar_surface(cl_dist,z,h,w):
+    """function for creating a Gaussian-based point bar surface
+    used in 3D fluvial model
+    inputs:
+    cl_dist - distance map (distance from centerline)
+    z - reference elevation (m)
+    h - channel depth (m)
+    w - channel width, in pixels, as cl_dist is also given in pixels
+    returns:
+    pb - map of the Gaussian surface that can be used to from a point bar deposit (m)"""
     pb = z-h*np.exp(-(cl_dist**2)/(2*(w*0.33)**2))
     return pb
 
-def sand_surface(surf,bth,dcr,cl_dist,z_map,h):
+def sand_surface(surf,bth,dcr,z_map,h):
+    """function for creating the top horizontal surface sand-rich deposit in the bottom of the channel
+    used in 3D submarine channel models
+    inputs:
+    surf - current geomorphic surface
+    bth - thickness of sand deposit in axis of channel (m)
+    dcr - critical channel depth, above which there is no sand deposition (m)
+    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
+    h - channel depth (m)
+    returns:
+    th - thickness map of sand deposit (m)
+    relief - map of channel relief (m)"""
     relief = abs(surf-z_map+h)
     relief = abs(relief-np.amin(relief))
     th = bth * (1 - relief/dcr) # bed thickness inversely related to relief
-    th[th<0] = 0.0
+    th[th<0] = 0.0 # set negative th values to zero
     return th, relief
 
 def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
+    """function for creating a map of overbank deposit thickness
+    inputs:
+    h_mud - maximum thickness of overbank deposit (m)
+    levee_width - half-width of overbank deposit (m)
+    cl_dist - distance map (distance from centerline)
+    w - channel width (in pixels, as cl_dist is also given in pixels)
+    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
+    topo - current geomorphic surface
+    returns:
+    th - map of overbank deposit thickness (m)"""
     surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
     surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
     surf = np.minimum(surf1,surf2)
@@ -760,13 +802,19 @@ def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
     surf = np.minimum(surf,surf3)
     surf[surf<0] = 0;
     relief = abs(topo-z_map)
-    fth = 100.0
+    fth = 100.0 # critical height above thalweg, above which there is no deposition
     th = 1 - relief/fth
-    th[th<0] = 0
+    th[th<0] = 0 # set negative th values to zero
     th = surf * th
     return th
 
 def topostrat(topo):
+    """function for converting a stack of geomorphic surfaces into stratigraphic surfaces
+    inputs:
+    topo - 3D numpy array of geomorphic surfaces
+    returns:
+    strat - 3D numpy array of stratigraphic surfaces
+    """
     r,c,ts = np.shape(topo)
     strat = np.copy(topo)
     for i in (range(0,ts)):
@@ -777,12 +825,12 @@ def cl_dist_map(x,y,z,xmin,xmax,ymin,ymax,dx):
     """function for centerline rasterization and distance map calculation (does not return zmap)
     used for cutoffs only 
     inputs:
-    x,y,z -
-    xmin,xmax,ymin,ymax -
-    dx -
+    x,y,z - coordinates of centerline
+    xmin, xmax, ymin, ymax - x and y coordinates that define the area of interest
+    dx - gridcell size (m)
     returns:
-    cl_dist -
-    x_pix, y_pix -
+    cl_dist - distance map (distance from centerline)
+    x_pix, y_pix, - x and y pixel coordinates of the centerline
     """
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
