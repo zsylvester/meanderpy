@@ -93,6 +93,14 @@ This function also plots the basal erosional surface and the final topographic s
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="900">
 
+## Related publications
+
+Sylvester, Z., Durkin, P., and Covault, J.A., 2019, High curvatures drive river meandering: Geology, v. 47, p. 263–266, [doi:10.1130/G45608.1](https://doi.org/10.1130/G45608.1).
+Sylvester, Z., and Covault, J.A., 2016, Development of cutoff-related knickpoints during early evolution of submarine channels: v. 44, p. 835–838, [doi:10.1130/G38397.1](https://doi.org/10.1130/G38397.1).
+Covault, J.A., Sylvester, Z., Hubbard, S.M., and Jobe, Z.R., 2016, The Stratigraphic Record of Submarine-Channel Evolution: The Sedimentary Record, v. 14, no. 3, p. 4-11, [doi:10.2210/sedred.2016.3](https://www.sepm.org/files/143article.hqx9r9brxux8f2se.pdf).
+Sylvester, Z., Pirmez, C., and Cantelli, A., 2011, A model of submarine channel-levee evolution based on channel trajectories: Implications for stratigraphic architecture: Marine and Petroleum Geology, v. 28, p. 716–727, [doi:10.1016/j.marpetgeo.2010.05.012](https://doi.org/10.1016/j.marpetgeo.2010.05.012).
+
+
 
 ## Acknowledgements
 
