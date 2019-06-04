@@ -377,7 +377,6 @@ class ChannelBelt:
         iwidth = int((xmax-xmin)/dx)
         iheight = int((ymax-ymin)/dx)
         topo = np.zeros((iheight,iwidth,4*n_steps)) # array for storing topographic surfaces
-        # facies = np.zeros((iheight-1,iwidth-1,4*n_steps)) # array for storing facies
         facies = np.zeros((4*n_steps,1))
         # create initial topography:
         x1 = np.linspace(0,iwidth-1,iwidth)
@@ -388,7 +387,6 @@ class ChannelBelt:
         topoinit = z1[0] - ((z1[0]-z1[-1])/(xmax-xmin))*xv*dx # initial (sloped) topography
         topo[:,:,0] = topoinit.copy()
         surf = topoinit.copy()
-        # facies[:,:,0] = np.NaN
         facies[0] = np.NaN
         # generate surfaces:
         f = FloatProgress(min=0,max=n_steps)
@@ -432,15 +430,12 @@ class ChannelBelt:
                 th[th<0] = 0 # eliminate negative th values
                 surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
                 topo[:,:,4*i+1] = surf # top of oxbow mud
-                # facies[:,:,4*i+1] = 0
                 facies[4*i+1] = 0
                 surf = surf+th # update topographic surface with sand thickness
                 topo[:,:,4*i+2] = surf # top of sand
-                # facies[:,:,4*i+2] = 1
                 facies[4*i+2] = 1
                 surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
                 topo[:,:,4*i+3] = surf # top of levee
-                # facies[:,:,4*i+3] = 2
                 facies[4*i+3] = 2
                 channels3D.append(Channel(x1,y1,z1,w,h))
                 x_pixs.append(x_pix)
@@ -449,7 +444,6 @@ class ChannelBelt:
             if model_type == 'submarine':
                 surf = surf + mud_surface(h_mud[i],levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
                 topo[:,:,4*i+1] = surf # top of levee
-                # facies[:,:,4*i+1] = 2
                 facies[4*i+1] = 2
                 # sand thickness:
                 th, relief = sand_surface(surf,bth,dcr,z_map,h)
@@ -470,18 +464,15 @@ class ChannelBelt:
                     th_oxbows = np.zeros(np.shape(th))
                 surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
                 topo[:,:,4*i+2] = surf # top of oxbow mud
-                # facies[:,:,4*i+2] = 0
                 facies[4*i+2] = 0
                 surf = surf+th # update topographic surface with sand thickness
                 topo[:,:,4*i+3] = surf # top of sand
-                # facies[:,:,4*i+3] = 1
                 facies[4*i+3] = 1
 
             cl_dist_prev = cl_dist.copy()
         topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
         strat = topostrat(topo) # create stratigraphic surfaces
         strat = np.delete(strat, np.arange(4*n_steps+1)[1::4], 2) # get rid of unnecessary stratigraphic surfaces (duplicates)
-        # facies = np.delete(facies, np.arange(4*n_steps)[::4], 2) # get rid of unnecessary facies layers (NaNs)
         facies = np.delete(facies, np.arange(4*n_steps)[::4]) # get rid of unnecessary facies layers (NaNs)
         if model_type == 'fluvial':
             facies_code = {0:'oxbow', 1:'point bar', 2:'levee'}
