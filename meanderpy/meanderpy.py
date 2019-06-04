@@ -886,33 +886,3 @@ def order_cl_pixels(x_pix,y_pix):
     x_pix = x_pix[clinds]
     y_pix = y_pix[clinds]
     return x_pix,y_pix
-
-def create_random_section_2_points(ax,strat,x1,x2,y1,y2,s1,dx,ds):
-    r, c, nt = np.shape(strat)
-    dist = dx*((x2-x1)**2 + (y2-y1)**2)**0.5
-    s2 = s1*dx+dist
-    num = int(dist/float(ds))
-    Xrand, Yrand, Srand = np.linspace(x1,x2,num), np.linspace(y1,y2,num), np.linspace(s1*dx,s2,num)
-    for i in range(1,nt-2,4):
-        strat_i = scipy.ndimage.map_coordinates(strat[:,:,i], np.vstack((Yrand,Xrand)))
-        strat_ii = scipy.ndimage.map_coordinates(strat[:,:,i+1], np.vstack((Yrand,Xrand)))
-        strat_iii = scipy.ndimage.map_coordinates(strat[:,:,i+2], np.vstack((Yrand,Xrand)))
-        strat_iiii = scipy.ndimage.map_coordinates(strat[:,:,i+3], np.vstack((Yrand,Xrand)))
-        X1 = np.concatenate((Srand, Srand[::-1]))  
-        Y1 = np.concatenate((strat_i, strat_ii[::-1]))
-        Y2 = np.concatenate((strat_ii, strat_iii[::-1]))
-        Y3 = np.concatenate((strat_iii, strat_iiii[::-1])) 
-        ax.fill(X1, Y1, facecolor=[0.5,0.25,0], linewidth=0.5)#, 'edgecolor', 'none') # oxbow
-        ax.fill(X1, Y2, facecolor=[0.9,0.9,0], linewidth=0.5)#, 'edgecolor', 'none') # point bar
-        ax.fill(X1, Y3, facecolor=[0.5,0.25,0], linewidth=0.5)#, 'edgecolor', 'none') # levee
-        
-def create_random_section_n_points(strat,x1,x2,y1,y2,dx,ds):
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    if type(x1)==int:
-        create_random_section_2_points(ax,strat,x1,x2,y1,y2,dx,ds)
-    else:
-        dx1,dy1,ds1,s1 = compute_s_coord(x1,y1)
-        for i in range(len(x1)):
-            create_random_section_2_points(ax,strat,x1[i],x2[i],y1[i],y2[i],s1[i],dx,ds)
-
