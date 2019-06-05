@@ -152,7 +152,7 @@ class ChannelBelt:
         else:
             last_cl_time = 0
         dx, dy, dz, ds, s = compute_derivatives(x,y,z)
-        slope = np.gradient(z)/ds
+        slope = np.diff(z)/ds
         # padding at the beginning can be shorter than padding at the downstream end:
         pad1 = int(pad/10.0)
         if pad1<5:
@@ -163,42 +163,21 @@ class ChannelBelt:
         display(f)
         for itn in range(nit): # main loop
             f.value += 1
-            ns=len(x)
-            dx, dy, ds, s, curv = compute_curvature(x,y)
-            curv = W*curv # dimensionless curvature
-            R0 = kl*curv # simple linear relationship between curvature and nominal migration rate
-            alpha = k*2*Cf/D # exponent for convolution function G
-            R1 = compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0)
-            # calculate new centerline coordinates:
-            dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
-            dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
-            # adjust x and y coordinates (this *is* the migration):
-            x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1]*dy_ds*dt  
-            y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
-            # find and execute cutoffs:
-            x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) 
-            dx, dy, ds, dz, s = compute_derivatives(x,y,z) # recompute derivatives
-            # resample centerline so that 'deltas' is roughly constant
-            # [parametric spline representation of curve; note that there is *no* smoothing]
-            tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
-            unew = np.linspace(0,1,1+s[-1]/deltas) # vector for resampling
-            out = scipy.interpolate.splev(unew,tck) # resampling
-            x, y, z = out[0], out[1], out[2] # assign new coordinate values
-            # z = np.minimum.accumulate(z)
-            dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
-            # incision:
-            slope = np.gradient(z)/ds
-            # slope-dependent erosion:
-            if (itn>t1) & (itn<=t2):
+            x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
+            x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
+            x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
+            slope = np.diff(z)/ds
+            # for itn<t1, z is unchanged
+            if (itn>t1) & (itn<=t2): # incision
                 if np.min(np.abs(slope))!=0:
-                    z = z + kv*dens*9.81*D*slope*dt # slope-dependent incision
+                    z = z + kv*dens*9.81*D*slope*dt 
                 else:
                     z = z - kv*dens*9.81*D*dt*0.01
             if (itn>t2) & (itn<=t3): # lateral migration
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
                 else:
-                    z = z
+                    z = z # no change in z
             if (itn>t3): # aggradation
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
@@ -481,6 +460,33 @@ class ChannelBelt:
         chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx,channels3D)
         return chb_3d, xmin, xmax, ymin, ymax
 
+def resample_centerline(x,y,z,deltas):
+    dx, dy, dz, ds, s = compute_derivatives(x,y,z) # compute derivatives
+    # resample centerline so that 'deltas' is roughly constant
+    # [parametric spline representation of curve; note that there is *no* smoothing]
+    tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
+    unew = np.linspace(0,1,1+s[-1]/deltas) # vector for resampling
+    out = scipy.interpolate.splev(unew,tck) # resampling
+    x, y, z = out[0], out[1], out[2] # assign new coordinate values
+    dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
+    return x,y,z,dx,dy,dz,ds,s
+
+def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
+    ns=len(x)
+    curv = compute_curvature(x,y)
+    dx, dy, dz, ds, s = compute_derivatives(x,y,z)
+    curv = W*curv # dimensionless curvature
+    R0 = kl*curv # simple linear relationship between curvature and nominal migration rate
+    alpha = k*2*Cf/D # exponent for convolution function G
+    R1 = compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0)
+    # calculate new centerline coordinates:
+    dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
+    dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
+    # adjust x and y coordinates (this *is* the migration):
+    x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1]*dy_ds*dt  
+    y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
+    return x,y
+
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
     """generate straight Channel object with some noise added that can serve
     as input for initializing a ChannelBelt object
@@ -531,8 +537,8 @@ def compute_derivatives(x,y,z):
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)   
     dz = np.gradient(z)   
-    ds = np.sqrt(dx**2+dy**2+dz**2)
-    s = np.cumsum(ds)
+    ds = np.sqrt(dx[1:]**2+dy[1:]**2+dz[1:]**2)
+    s = np.hstack((0,np.cumsum(ds)))
     return dx, dy, dz, ds, s
 
 def compute_curvature(x,y):
@@ -546,12 +552,10 @@ def compute_curvature(x,y):
     curvature - curvature of the curve (in 1/units of x and y)"""
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)      
-    ds = np.sqrt(dx**2+dy**2)
     ddx = np.gradient(dx) # second derivatives 
     ddy = np.gradient(dy) 
-    curvature = (dx*ddy - dy*ddx) / ((dx**2 + dy**2)**1.5)
-    s = np.cumsum(ds)
-    return dx, dy, ds, s, curvature
+    curvature = (dx*ddy-dy*ddx)/((dx**2+dy**2)**1.5)
+    return curvature
 
 def make_colormap(seq):
     """Return a LinearSegmentedColormap
@@ -571,7 +575,8 @@ def make_colormap(seq):
     return mcolors.LinearSegmentedColormap('CustomMap', cdict)
 
 def kth_diag_indices(a,k):
-    """function for finding diagonal indices with k offset (from Stackexchange)"""
+    """function for finding diagonal indices with k offset
+    [from https://stackoverflow.com/questions/10925671/numpy-k-th-diagonal-indices]"""
     rows, cols = np.diag_indices_from(a)
     if k<0:
         return rows[:k], cols[-k:]
@@ -719,11 +724,10 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     cl[y_pix,x_pix] = 0
     cl_dist, inds = ndimage.distance_transform_edt(cl, return_indices=True)
     dx,dy,dz,ds,s = compute_derivatives(x,y,z)
-    # dx_pix,dy_pix,ds_pix,s_pix = compute_derivatives(x_pix,y_pix) # needed for s_pix only
-    dx_pix = np.gradient(x_pix)
-    dy_pix = np.gradient(y_pix)
+    dx_pix = np.diff(x_pix)
+    dy_pix = np.diff(y_pix)
     ds_pix = np.sqrt(dx_pix**2+dy_pix**2)
-    s_pix = np.cumsum(ds_pix)
+    s_pix = np.hstack((0,np.cumsum(ds_pix)))
     f = scipy.interpolate.interp1d(s,z)
     snew = s_pix*s[-1]/s_pix[-1]
     if snew[-1]>s[-1]:
