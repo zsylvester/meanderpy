@@ -152,7 +152,7 @@ class ChannelBelt:
         else:
             last_cl_time = 0
         dx, dy, dz, ds, s = compute_derivatives(x,y,z)
-        slope = np.diff(z)/ds
+        slope = np.gradient(z)/ds
         # padding at the beginning can be shorter than padding at the downstream end:
         pad1 = int(pad/10.0)
         if pad1<5:
@@ -166,7 +166,7 @@ class ChannelBelt:
             x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
-            slope = np.diff(z)/ds
+            slope = np.gradient(z)/ds
             # for itn<t1, z is unchanged
             if (itn>t1) & (itn<=t2): # incision
                 if np.min(np.abs(slope))!=0:
@@ -537,8 +537,8 @@ def compute_derivatives(x,y,z):
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)   
     dz = np.gradient(z)   
-    ds = np.sqrt(dx[1:]**2+dy[1:]**2+dz[1:]**2)
-    s = np.hstack((0,np.cumsum(ds)))
+    ds = np.sqrt(dx**2+dy**2+dz**2)
+    s = np.hstack((0,np.cumsum(ds[1:])))
     return dx, dy, dz, ds, s
 
 def compute_curvature(x,y):
