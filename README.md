@@ -12,10 +12,10 @@
 
 numpy  
 matplotlib   
-scipy
-seaborn
-PIL
-numba
+scipy  
+seaborn  
+PIL  
+numba  
 scikit-image
 
 ## Usage
