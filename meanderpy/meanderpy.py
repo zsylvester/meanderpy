@@ -8,11 +8,34 @@ from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
 from matplotlib.colors import LinearSegmentedColormap
-from ipywidgets import FloatProgress
-from IPython.display import display
+import time, sys
 import numba
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
+
+def update_progress(progress):
+    """progress bar from https://stackoverflow.com/questions/3160699/python-progress-bar
+    update_progress() : Displays or updates a console progress bar
+    Accepts a float between 0 and 1. Any int will be converted to a float.
+    A value under 0 represents a 'halt'.
+    A value at 1 or bigger represents 100%"""
+    barLength = 20 # Modify this to change the length of the progress bar
+    status = ""
+    if isinstance(progress, int):
+        progress = float(progress)
+    if not isinstance(progress, float):
+        progress = 0
+        status = "error: progress var must be float\r\n"
+    if progress < 0:
+        progress = 0
+        status = "Halt...\r\n"
+    if progress >= 1:
+        progress = 1
+        status = "Done...\r\n"
+    block = int(round(barLength*progress))
+    text = "\rPercent: [{0}] {1}% {2}".format( "#"*block + "-"*(barLength-block), progress*100, status)
+    sys.stdout.write(text)
+    sys.stdout.flush()
 
 class Channel:
     """class for Channel objects"""
@@ -159,10 +182,8 @@ class ChannelBelt:
             pad1 = 5
         omega = -1.0 # constant in curvature calculation (Howard and Knutson, 1984)
         gamma = 2.5 # from Ikeda et al., 1981 and Howard and Knutson, 1984
-        f = FloatProgress(min=1,max=nit) # progress bar
-        display(f)
         for itn in range(nit): # main loop
-            f.value += 1
+            update_progress(itn/nit)
             x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
@@ -172,7 +193,7 @@ class ChannelBelt:
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt 
                 else:
-                    z = z - kv*dens*9.81*D*dt*0.01
+                    z = z - kv*dens*9.81*D*dt*0.00001
             if (itn>t2) & (itn<=t3): # lateral migration
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
@@ -368,13 +389,11 @@ class ChannelBelt:
         surf = topoinit.copy()
         facies[0] = np.NaN
         # generate surfaces:
-        f = FloatProgress(min=0,max=n_steps)
-        display(f)
         channels3D = []
         x_pixs = []
         y_pixs = []
         for i in range(n_steps):
-            f.value += 1
+            update_progress(i/n_steps)
             x = channels[i].x
             y = channels[i].y
             z = channels[i].z
