@@ -16,7 +16,7 @@ setuptools.setup(
     packages=['meanderpy'],
     scripts=['/Users/zoltan/Dropbox/Channels/meanderpy/meanderpy/meanderpy.py'],
     install_requires=['numpy','matplotlib','seaborn',
-        'scipy','numba','ipython','pillow','scikit-image'],
+        'scipy','numba','pillow','scikit-image'],
     classifiers=[
         "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 3",

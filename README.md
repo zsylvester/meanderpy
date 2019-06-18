@@ -8,6 +8,16 @@
 
 <code>pip install meanderpy</code>
 
+## Requirements
+
+numpy  
+matplotlib   
+scipy
+seaborn
+PIL
+numba
+scikit-image
+
 ## Usage
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_sketch.png" width="600">
