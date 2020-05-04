@@ -189,11 +189,10 @@ class ChannelBelt:
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
             slope = np.gradient(z)/ds
-            crit_slope = 0.025
             # for itn<t1, z is unchanged
             if (itn>t1) & (itn<=t2): # incision
                 if np.min(np.abs(slope))!=0:
-                    z = z + kv*dens*9.81*D*(slope+crit_slope)*dt 
+                    z = z + kv*dens*9.81*D*slope*dt
                     z = savgol_filter(z,51,3)
                 else:
                     z = z - kv*dens*9.81*D*dt*0.05
