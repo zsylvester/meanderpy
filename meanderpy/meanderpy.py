@@ -4,6 +4,7 @@ import seaborn as sns
 import scipy.interpolate
 from scipy.spatial import distance
 from scipy import ndimage
+from scipy.signal import savgol_filter
 from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
@@ -188,12 +189,14 @@ class ChannelBelt:
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
             slope = np.gradient(z)/ds
+            crit_slope = 0.025
             # for itn<t1, z is unchanged
             if (itn>t1) & (itn<=t2): # incision
                 if np.min(np.abs(slope))!=0:
-                    z = z + kv*dens*9.81*D*slope*dt 
+                    z = z + kv*dens*9.81*D*(slope+crit_slope)*dt 
+                    z = savgol_filter(z,51,3)
                 else:
-                    z = z - kv*dens*9.81*D*dt*0.00001
+                    z = z - kv*dens*9.81*D*dt*0.05
             if (itn>t2) & (itn<=t3): # lateral migration
                 if np.min(np.abs(slope))!=0:
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
@@ -390,8 +393,6 @@ class ChannelBelt:
         facies[0] = np.NaN
         # generate surfaces:
         channels3D = []
-        x_pixs = []
-        y_pixs = []
         for i in range(n_steps):
             update_progress(i/n_steps)
             x = channels[i].x
@@ -435,9 +436,7 @@ class ChannelBelt:
                 surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
                 topo[:,:,4*i+3] = surf # top of levee
                 facies[4*i+3] = 2
-                channels3D.append(Channel(x1,y1,z1,w,h))
-                x_pixs.append(x_pix)
-                y_pixs.append(y_pix)
+                channels3D.append(Channel(x1-xmin,y1-ymin,z1,w,h))
 
             if model_type == 'submarine':
                 surf = surf + mud_surface(h_mud[i],levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
@@ -466,6 +465,7 @@ class ChannelBelt:
                 surf = surf+th # update topographic surface with sand thickness
                 topo[:,:,4*i+3] = surf # top of sand
                 facies[4*i+3] = 1
+                channels3D.append(Channel(x1-xmin,y1-ymin,z1,w,h))
 
             cl_dist_prev = cl_dist.copy()
         topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
@@ -484,7 +484,7 @@ def resample_centerline(x,y,z,deltas):
     # resample centerline so that 'deltas' is roughly constant
     # [parametric spline representation of curve; note that there is *no* smoothing]
     tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
-    unew = np.linspace(0,1,1+s[-1]/deltas) # vector for resampling
+    unew = np.linspace(0,1,1+int(round(s[-1]/deltas))) # vector for resampling
     out = scipy.interpolate.splev(unew,tck) # resampling
     x, y, z = out[0], out[1], out[2] # assign new coordinate values
     dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
@@ -494,10 +494,12 @@ def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
     ns=len(x)
     curv = compute_curvature(x,y)
     dx, dy, dz, ds, s = compute_derivatives(x,y,z)
+    sinuosity = s[-1]/(x[-1]-x[0])
     curv = W*curv # dimensionless curvature
     R0 = kl*curv # simple linear relationship between curvature and nominal migration rate
     alpha = k*2*Cf/D # exponent for convolution function G
     R1 = compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0)
+    R1 = sinuosity**(-2/3.0)*R1
     # calculate new centerline coordinates:
     dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
     dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
@@ -823,12 +825,12 @@ def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
     surf3 = h_mud + (4*1.5*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     surf = np.minimum(surf,surf3)
     surf[surf<0] = 0;
-    relief = abs(topo-z_map)
-    fth = 100.0 # critical height above thalweg, above which there is no deposition
-    th = 1 - relief/fth
-    th[th<0] = 0 # set negative th values to zero
-    th = surf * th
-    return th
+    # relief = abs(topo-z_map)
+    # fth = 100.0 # critical height above thalweg, above which there is no deposition
+    # th = 1 - relief/fth
+    # th[th<0] = 0 # set negative th values to zero
+    # th = surf * th
+    return surf
 
 def topostrat(topo):
     """function for converting a stack of geomorphic surfaces into stratigraphic surfaces
