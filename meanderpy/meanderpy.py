@@ -816,18 +816,15 @@ def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
     z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
     topo - current geomorphic surface
     returns:
-    th - map of overbank deposit thickness (m)"""
+    surf - map of overbank deposit thickness (m)"""
+    # create a surface that thins linearly away from the channel centerline:
     surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
     surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
     surf = np.minimum(surf1,surf2)
-    surf3 = h_mud + (4*1.5*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
+    # surface for 'eroding' the central part of the mud layer:
+    surf3 = h_mud + (4*1.5*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5) 
     surf = np.minimum(surf,surf3)
-    surf[surf<0] = 0;
-    # relief = abs(topo-z_map)
-    # fth = 100.0 # critical height above thalweg, above which there is no deposition
-    # th = 1 - relief/fth
-    # th[th<0] = 0 # set negative th values to zero
-    # th = surf * th
+    surf[surf<0] = 0; # eliminate negative thicknesses
     return surf
 
 def topostrat(topo):
