@@ -191,18 +191,17 @@ class ChannelBelt:
             slope = np.gradient(z)/ds
             # for itn<t1, z is unchanged
             if (itn>t1) & (itn<=t2): # incision
-                if np.min(np.abs(slope))!=0:
+                if np.min(np.abs(slope))!=0: # if slope is not zero
                     z = z + kv*dens*9.81*D*slope*dt
-                    z = savgol_filter(z,51,3)
                 else:
-                    z = z - kv*dens*9.81*D*dt*0.05
+                    z = z - kv*dens*9.81*D*dt*0.05 # if slope is zero
             if (itn>t2) & (itn<=t3): # lateral migration
-                if np.min(np.abs(slope))!=0:
+                if np.min(np.abs(slope))!=0: # if slope is not zero
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
                 else:
                     z = z # no change in z
             if (itn>t3): # aggradation
-                if np.min(np.abs(slope))!=0:
+                if np.min(np.abs(slope))!=0: # if slope is not zero
                     z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
                 else:
                     z = z + aggr_factor*dt
