@@ -17,6 +17,8 @@ seaborn
 PIL  
 numba  
 scikit-image
+tqdm
+jupyter
 
 ## Usage
 
@@ -102,6 +104,10 @@ This function also plots the basal erosional surface and the final topographic s
 <img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_map.png" width="400">
 
 <img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="900">
+
+## Google Colab notebook
+
+If you don't want to deal with any local Python enviornments and installations, you should be able to run meanderpy in [this Google Colab notebook](https://colab.research.google.com/drive/1eZgGD_eXddaAeqxmI9guGIcTjjrLXmKO?usp=sharing).
 
 ## Related publications
 
