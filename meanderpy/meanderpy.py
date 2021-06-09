@@ -14,38 +14,20 @@ import numba
 import matplotlib.colors as mcolors
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
-
-def update_progress(progress):
-    """progress bar from https://stackoverflow.com/questions/3160699/python-progress-bar
-    update_progress() : Displays or updates a console progress bar
-    Accepts a float between 0 and 1. Any int will be converted to a float.
-    A value under 0 represents a 'halt'.
-    A value at 1 or bigger represents 100%"""
-    barLength = 20 # Modify this to change the length of the progress bar
-    status = ""
-    if isinstance(progress, int):
-        progress = float(progress)
-    if not isinstance(progress, float):
-        progress = 0
-        status = "error: progress var must be float\r\n"
-    if progress < 0:
-        progress = 0
-        status = "Halt...\r\n"
-    if progress >= 1:
-        progress = 1
-        status = "Done...\r\n"
-    block = int(round(barLength*progress))
-    text = "\rPercent: [{0}] {1}% {2}".format( "#"*block + "-"*(barLength-block), progress*100, status)
-    sys.stdout.write(text)
-    sys.stdout.flush()
+from tqdm import trange
 
 class Channel:
     """class for Channel objects"""
+
     def __init__(self,x,y,z,W,D):
-        """initialize Channel object
-        x, y, z  - coordinates of centerline
-        W - channel width
-        D - channel depth"""
+        """Initialize Channel object
+
+        :param x: x-coordinate of centerline
+        :param y: y-coordinate of centerline
+        :param z: z-coordinate of centerline
+        :param W: channel width
+        :param D: channel depth"""
+
         self.x = x
         self.y = y
         self.z = z
@@ -54,11 +36,16 @@ class Channel:
 
 class Cutoff:
     """class for Cutoff objects"""
+
     def __init__(self,x,y,z,W,D):
-        """initialize Cutoff object
-        x, y, z  - coordinates of centerline
-        W - channel width
-        D - channel depth"""
+        """Initialize Cutoff object
+
+        :param x: x-coordinate of centerline
+        :param y: y-coordinate of centerline
+        :param z: z-coordinate of centerline
+        :param W: channel width
+        :param D: channel depth"""
+
         self.x = x
         self.y = y
         self.z = z
@@ -67,14 +54,18 @@ class Cutoff:
 
 class ChannelBelt3D:
     """class for 3D models of channel belts"""
+
     def __init__(self, model_type, topo, strat, facies, facies_code, dx, channels):
-        """model_type - can be either 'fluvial' or 'submarine'
-        topo - set of topographic surfaces (3D numpy array)
-        strat - set of stratigraphic surfaces (3D numpy array)
-        facies - facies volume (3D numpy array)
-        facies_code - dictionary of facies codes, e.g. {0:'oxbow', 1:'point bar', 2:'levee'}
-        dx - gridcell size (m)
-        channels - list of channel objects that form 3D model"""
+        """initialize ChannelBelt3D object
+
+        :param model_type: type of model to be built; can be either 'fluvial' or 'submarine'
+        :param topo: set of topographic surfaces (3D numpy array)
+        :param strat: set of stratigraphic surfaces (3D numpy array)
+        :param facies: facies volume (3D numpy array)
+        :param facies_code: dictionary of facies codes, e.g. {0:'oxbow', 1:'point bar', 2:'levee'}
+        :param dx: gridcell size (m)
+        :param channels: list of channel objects that form 3D model"""
+
         self.model_type = model_type
         self.topo = topo
         self.strat = strat
@@ -86,36 +77,38 @@ class ChannelBelt3D:
     def plot_xsection(self, xsec, colors, ve):
         """method for plotting a cross section through a 3D model; also plots map of 
         basal erosional surface and map of final geomorphic surface
-        xsec - location of cross section along the x-axis (in pixel/ voxel coordinates) 
-        colors - list of RGB values that define the colors for different facies
-        ve - vertical exaggeration"""
+
+        :param xsec: location of cross section along the x-axis (in pixel/ voxel coordinates) 
+        :param colors: list of RGB values that define the colors for different facies
+        :param ve: vertical exaggeration
+        :return: handles to the three figures"""
+
         strat = self.strat
         dx = self.dx
         fig1 = plt.figure(figsize=(20,5))
         ax1 = fig1.add_subplot(111)
         r,c,ts = np.shape(strat)
         Xv = dx * np.arange(0,r)
-        for xloc in range(xsec,xsec+1,1):
-            for i in range(0,ts-1,3):
-                X1 = np.concatenate((Xv, Xv[::-1]))  
-                Y1 = np.concatenate((strat[:,xloc,i], strat[::-1,xloc,i+1])) 
-                Y2 = np.concatenate((strat[:,xloc,i+1], strat[::-1,xloc,i+2]))
-                Y3 = np.concatenate((strat[:,xloc,i+2], strat[::-1,xloc,i+3]))
-                if self.model_type == 'submarine':
-                    ax1.fill(X1, Y1, facecolor=colors[2], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
-                    ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
-                    ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
-                if self.model_type == 'fluvial':
-                    ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
-                    ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
-                    ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
-            ax1.set_xlim(0,dx*(r-1))
-            ax1.set_aspect(ve, adjustable='datalim')
+        for i in range(0,ts-1,3):
+            X1 = np.concatenate((Xv, Xv[::-1]))  
+            Y1 = np.concatenate((strat[:,xsec,i], strat[::-1,xsec,i+1])) 
+            Y2 = np.concatenate((strat[:,xsec,i+1], strat[::-1,xsec,i+2]))
+            Y3 = np.concatenate((strat[:,xsec,i+2], strat[::-1,xsec,i+3]))
+            if self.model_type == 'submarine':
+                ax1.fill(X1, Y1, facecolor=colors[2], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
+                ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
+            if self.model_type == 'fluvial':
+                ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
+                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
+        ax1.set_xlim(0,dx*(r-1))
+        ax1.set_aspect(ve, adjustable='datalim')
         fig2 = plt.figure()
         ax2 = fig2.add_subplot(111)
         ax2.contourf(strat[:,:,ts-1],100,cmap='viridis')
         ax2.contour(strat[:,:,ts-1],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
-        ax2.plot([xloc, xloc],[0,r],'k',linewidth=2)
+        ax2.plot([xsec, xsec],[0,r],'k',linewidth=2)
         ax2.axis([0,c,0,r])
         ax2.set_aspect('equal', adjustable='box')        
         ax2.set_title('final geomorphic surface')
@@ -124,7 +117,7 @@ class ChannelBelt3D:
         ax3 = fig3.add_subplot(111)
         ax3.contourf(strat[:,:,0],100,cmap='viridis')
         ax3.contour(strat[:,:,0],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
-        ax3.plot([xloc, xloc],[0,r],'k',linewidth=2)
+        ax3.plot([xsec, xsec],[0,r],'k',linewidth=2)
         ax3.axis([0,c,0,r])
         ax3.set_aspect('equal', adjustable='box')
         ax3.set_title('basal erosional surface')
@@ -133,35 +126,39 @@ class ChannelBelt3D:
 
 class ChannelBelt:
     """class for ChannelBelt objects"""
+
     def __init__(self, channels, cutoffs, cl_times, cutoff_times):
         """initialize ChannelBelt object
-        channels - list of Channel objects
-        cutoffs - list of Cutoff objects
-        cl_times - list of ages of Channel objects
-        cutoff_times - list of ages of Cutoff objects"""
+
+        :param channels: list of Channel objects
+        :param cutoffs: list of Cutoff objects
+        :param cl_times: list of ages of Channel objects (in years)
+        :param cutoff_times: list of ages of Cutoff objects"""
+
         self.channels = channels
         self.cutoffs = cutoffs
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
     def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens,t1,t2,t3,aggr_factor,*D):
-        """function for computing migration rates along channel centerlines and moving the centerlines accordingly
-        inputs:
-        nit - number of iterations
-        saved_ts - which time steps will be saved
-        deltas - distance between nodes on centerline
-        pad - padding (number of nodepoints along centerline)
-        crdist - threshold distance at which cutoffs occur
-        Cf - dimensionless Chezy friction factor
-        kl - migration rate constant (m/s)
-        kv - vertical slope-dependent erosion rate constant (m/s)
-        dt - time step (s)
-        dens - density of fluid (kg/m3)
-        t1 - time step when incision starts
-        t2 - time step when lateral migration starts
-        t3 - time step when aggradation starts
-        aggr_factor - aggradation factor
-        D - channel depth (m)"""
+        """method for computing migration rates along channel centerlines and moving the centerlines accordingly
+
+        :param nit: number of iterations
+        :param saved_ts: which time steps will be saved; e.g., if saved_ts = 10, every tenth time step will be saved
+        :param deltas: distance between nodes on centerline
+        :param pad: padding (number of nodepoints along centerline)
+        :param crdist: threshold distance at which cutoffs occur
+        :param Cf: dimensionless Chezy friction factor
+        :param kl: migration rate constant (m/s)
+        :param kv: vertical slope-dependent erosion rate constant (m/s)
+        :param dt: time step (s)
+        :param dens: density of fluid (kg/m3)
+        :param t1: time step when incision starts
+        :param t2: time step when lateral migration starts
+        :param t3: time step when aggradation starts
+        :param aggr_factor: aggradation factor
+        :param D: channel depth (m)"""
+
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
         W = channel.W;
@@ -182,16 +179,16 @@ class ChannelBelt:
         pad1 = int(pad/10.0)
         if pad1<5:
             pad1 = 5
-        omega = -1.0 # constant in curvature calculation (Howard and Knutson, 1984)
+        omega = -1.0 # constant in migration rate calculation (Howard and Knutson, 1984)
         gamma = 2.5 # from Ikeda et al., 1981 and Howard and Knutson, 1984
-        for itn in range(nit): # main loop
-            update_progress(itn/nit)
+        for itn in trange(nit): # main loop
+            # update_progress(itn/nit)
             x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
             slope = np.gradient(z)/ds
-            # for itn<t1, z is unchanged
+            # for itn<=t1, z is unchanged; for itn>t1:
             if (itn>t1) & (itn<=t2): # incision
                 if np.min(np.abs(slope))!=0: # if slope is not zero
                     z = z + kv*dens*9.81*D*slope*dt
@@ -199,11 +196,13 @@ class ChannelBelt:
                     z = z - kv*dens*9.81*D*dt*0.05 # if slope is zero
             if (itn>t2) & (itn<=t3): # lateral migration
                 if np.min(np.abs(slope))!=0: # if slope is not zero
+                    # use the median slope to counterbalance incision:
                     z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
                 else:
                     z = z # no change in z
             if (itn>t3): # aggradation
                 if np.min(np.abs(slope))!=0: # if slope is not zero
+                    # 'aggr_factor' should be larger than 1 so that this leads to overall aggradation:
                     z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
                 else:
                     z = z + aggr_factor*dt
@@ -218,11 +217,15 @@ class ChannelBelt:
                 self.channels.append(channel)
 
     def plot(self, plot_type, pb_age, ob_age, end_time, n_channels):
-        """plot ChannelBelt object
-        plot_type - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
-        pb_age - age of point bars (in years) at which they get covered by vegetation
-        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation
-        end_time (optional) - age of last channel to be plotted (in years)"""
+        """method  for plotting ChannelBelt object
+
+        :param plot_type: can be either 'strat' (for stratigraphic plot), 'morph' (for morphologic plot), or 'age' (for age plot)
+        :param pb_age: age of point bars (in years) at which they get covered by vegetation
+        :param ob_age: age of oxbow lakes (in years) at which they get covered by vegetation
+        :param end_time: age of last channel to be plotted (in years)
+        :param n_channels: total number of channels (used in 'age' plots; can be larger than number of channels being plotted)
+        :return: handle to figure"""
+
         cot = np.array(self.cutoff_times)
         sclt = np.array(self.cl_times)
         if end_time>0:
@@ -251,7 +254,7 @@ class ChannelBelt:
             ob_cmap = make_colormap([green,green,ob_crit,green,ob_color,1.0,ob_color]) # colormap for oxbows
             plt.fill([xmin,xmax,xmax,xmin],[ymin,ymin,ymax,ymax],color=(106/255.0,159/255.0,67/255.0))
         if plot_type == 'age':
-            age_cmap = cm.get_cmap('magma',n_channels)
+            age_cmap = cm.get_cmap('magma', n_channels)
         for i in range(0,len(times)):
             if times[i] in sclt:
                 ind = np.where(sclt==times[i])[0][0]
@@ -297,22 +300,23 @@ class ChannelBelt:
         plt.ylim(ymin,ymax)
         return fig
 
-    def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age, ob_age, scale, end_time, n_channels):
+    def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age, ob_age, end_time, n_channels):
         """method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time
         movie has to be assembled from the PNG file after this method is applied
-        xmin - value of x coodinate on the left side of frame
-        xmax - value of x coordinate on right side of frame
-        plot_type = - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
-        filename - first few characters of the output filenames
-        dirname - name of directory where output files should be written
-        pb_age - age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
-        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
-        scale - scaling factor (e.g., 2) that determines how many times larger you want the frame to be, compared to the default scaling of the figure
-        end_time - time at which simulation should be stopped
-        n_channels - total number of channels + cutoffs for which simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'
-        """
+
+        :param xmin: value of x coodinate on the left side of frame
+        :param xmax: value of x coordinate on right side of frame
+        :param plot_type: plot type; can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
+        :param filename: first few characters of the output filenames
+        :param dirname: name of directory where output files should be written
+        :param pb_age: age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
+        :param ob_age: age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
+        :param scale: scaling factor (e.g., 2) that determines how many times larger you want the frame to be, compared to the default scaling of the figure
+        :param end_time: time at which simulation should be stopped
+        :param n_channels: total number of channels + cutoffs for which simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'"""
+
         sclt = np.array(self.cl_times)
-        if len(end_time)>0:
+        if type(end_time) != list:
             sclt = sclt[sclt<=end_time]
         channels = self.channels[:len(sclt)]
         ymax = 0
@@ -322,6 +326,7 @@ class ChannelBelt:
         ymin = -1*ymax
         for i in range(0,len(sclt)):
             fig = self.plot(plot_type, pb_age, ob_age, sclt[i], n_channels)
+            scale = 1
             fig_height = scale*fig.get_figheight()
             fig_width = (xmax-xmin)*fig_height/(ymax-ymin)
             fig.set_figwidth(fig_width)
@@ -337,23 +342,26 @@ class ChannelBelt:
 
     def build_3d_model(self,model_type,h_mud,levee_width,h,w,bth,dcr,dx,delta_s,starttime,endtime,xmin,xmax,ymin,ymax):
         """method for building 3D model from set of centerlines (that are part of a ChannelBelt object)
-        Inputs: 
-        model_type - model type ('fluvial' or 'submarine')
-        h_mud - maximum thickness of overbank mud
-        levee_width - width of overbank mud
-        h - channel depth
-        w - channel width
-        bth - thickness of channel sand (only used in submarine models)
-        dcr - critical channel depth where sand thickness goes to zero (only used in submarine models)
-        dx - cell size in x and y directions
-        delta_s - sampling distance alogn centerlines
-        starttime - age of centerline that will be used as the first centerline in the model
-        endtime - age of centerline that will be used as the last centerline in the model
-        xmin,xmax,ymin,ymax - x and y coordinates that define the model domain; if xmin is set to zero,
-        a plot of the centerlines is generated and the model domain has to be defined by clicking its upper 
-        left and lower right corners
-        Returns: a ChannelBelt3D object
-        """
+ 
+        :param model_type: model type ('fluvial' or 'submarine')
+        :param h_mud: maximum thickness of overbank mud
+        :param levee_width: width of overbank mud
+        :param h: channel depth
+        :param w: channel width
+        :param bth: thickness of channel sand (only used in submarine models)
+        :param dcr: critical channel depth where sand thickness goes to zero (only used in submarine models)
+        :param dx: cell size in x and y directions
+        :param delta_s: sampling distance alogn centerlines
+        :param starttime: age of centerline that will be used as the first centerline in the model
+        :param endtime: age of centerline that will be used as the last centerline in the model
+        :param xmin: minimum x coordinate that defines the model domain; if xmin is set to zero, 
+        a plot of the centerlines is generated and the model domain has to be defined by clicking its upper left and lower right corners
+        :param xmax: maximum x coordinate that defines the model domain
+        :param ymin: minimum y coordinate that defines the model domain
+        :param ymax: maximum y coordinate that defines the model domain
+        :return chb_3d: a ChannelBelt3D object
+        :return xmin, xmax, ymin, ymax: x and y coordinates that define the model domain (so that they can be reused later)"""
+
         sclt = np.array(self.cl_times)
         ind1 = np.where(sclt>=starttime)[0][0] 
         ind2 = np.where(sclt<=endtime)[0][-1]
@@ -393,6 +401,8 @@ class ChannelBelt:
         iwidth = int((xmax-xmin)/dx)
         iheight = int((ymax-ymin)/dx)
         topo = np.zeros((iheight,iwidth,4*n_steps)) # array for storing topographic surfaces
+        dists = np.zeros((iheight,iwidth,n_steps))
+        zmaps = np.zeros((iheight,iwidth,n_steps))
         facies = np.zeros((4*n_steps,1))
         # create initial topography:
         x1 = np.linspace(0,iwidth-1,iwidth)
@@ -406,8 +416,7 @@ class ChannelBelt:
         facies[0] = np.NaN
         # generate surfaces:
         channels3D = []
-        for i in range(n_steps):
-            update_progress(i/n_steps)
+        for i in trange(n_steps):
             x = channels[i].x
             y = channels[i].y
             z = channels[i].z
@@ -423,6 +432,8 @@ class ChannelBelt:
             # erosion:
             surf = np.minimum(surf,erosion_surface(h,w/dx,cl_dist,z_map))
             topo[:,:,4*i] = surf # erosional surface
+            dists[:,:,i] = cl_dist
+            zmaps[:,:,i] = z_map
             facies[4*i] = np.NaN
 
             if model_type == 'fluvial':
@@ -490,12 +501,25 @@ class ChannelBelt:
         if model_type == 'submarine':
             facies_code = {0:'oxbow', 1:'channel sand', 2:'levee'}
         chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx,channels3D)
-        return chb_3d, xmin, xmax, ymin, ymax
+        return chb_3d, xmin, xmax, ymin, ymax #, dists, zmaps
 
 def resample_centerline(x,y,z,deltas):
+    '''resample centerline so that 'deltas' is roughly constant, using parametric 
+    spline representation of curve; note that there is *no* smoothing
+
+    :param x: x-coordinates of centerline
+    :param y: y-coordinates of centerline
+    :param z: z-coordinates of centerline
+    :param deltas: distance between points on centerline
+    :return x: x-coordinates of resampled centerline
+    :return y: y-coordinates of resampled centerline
+    :return z: z-coordinates of resampled centerline
+    :return dx: dx of resampled centerline
+    :return dy: dy of resampled centerline
+    :return dz: dz of resampled centerline
+    :return s: s-coordinates of resampled centerline'''
+
     dx, dy, dz, ds, s = compute_derivatives(x,y,z) # compute derivatives
-    # resample centerline so that 'deltas' is roughly constant
-    # [parametric spline representation of curve; note that there is *no* smoothing]
     tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
     unew = np.linspace(0,1,1+int(round(s[-1]/deltas))) # vector for resampling
     out = scipy.interpolate.splev(unew,tck) # resampling
@@ -504,6 +528,23 @@ def resample_centerline(x,y,z,deltas):
     return x,y,z,dx,dy,dz,ds,s
 
 def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
+    '''migrate centerline during one time step, using the migration computed as in Howard & Knutson (1984)
+
+    :param x: x-coordinates of centerline
+    :param y: y-coordinates of centerline
+    :param z: z-coordinates of centerline
+    :param W: channel width
+    :param kl: migration rate (or erodibility) constant (m/s)
+    :param dt: duration of time step (s)
+    :param k: constant for calculating the exponent alpha (= 1.0)
+    :param Cf: dimensionless Chezy friction factor
+    :param D: channel depth
+    :param omega: constant in Howard & Knutson equation (= -1.0)
+    :param gamma: constant in Howard & Knutson equation (= 2.5)
+    :return x: new x-coordinates of centerline after migration
+    :return y: new y-coordinates of centerline after migration
+    '''
+
     ns=len(x)
     curv = compute_curvature(x,y)
     dx, dy, dz, ds, s = compute_derivatives(x,y,z)
@@ -837,8 +878,8 @@ def sand_surface(surf,bth,dcr,z_map,h):
     returns:
     th - thickness map of sand deposit (m)
     relief - map of channel relief (m)"""
-    relief = abs(surf-z_map+h)
-    relief = abs(relief-np.amin(relief))
+    relief = np.abs(surf-z_map+h)
+    relief = np.abs(relief-np.amin(relief))
     th = bth * (1 - relief/dcr) # bed thickness inversely related to relief
     th[th<0] = 0.0 # set negative th values to zero
     return th, relief
@@ -942,86 +983,3 @@ def order_cl_pixels(x_pix,y_pix):
     x_pix = x_pix[clinds]
     y_pix = y_pix[clinds]
     return x_pix,y_pix
-
-def plot_chb(chb, plot_type, pb_age, ob_age, end_time, n_channels, ax, cmap_name, water_color):
-        """plot ChannelBelt object
-        plot_type - can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
-        pb_age - age of point bars (in years) at which they get covered by vegetation
-        ob_age - age of oxbow lakes (in years) at which they get covered by vegetation
-        end_time - age of last channel to be plotted (in years)
-        ax -
-        cmap_name - 
-        water_color - """
-        cot = np.array(chb.cutoff_times)
-        sclt = np.array(chb.cl_times)
-        if end_time>0:
-            cot = cot[cot<=end_time]
-            sclt = sclt[sclt<=end_time]
-        times = np.sort(np.hstack((cot,sclt)))
-        times = np.unique(times)
-        order = 0 # variable for ordering objects in plot
-        # set up min and max x and y coordinates of the plot:
-        xmin = np.min(chb.channels[0].x)
-        xmax = np.max(chb.channels[0].x)
-        ymax = 0
-        for i in range(len(chb.channels)):
-            ymax = max(ymax, np.max(np.abs(chb.channels[i].y)))
-        ymax = ymax+2*chb.channels[0].W # add a bit of space on top and bottom
-        ymin = -1*ymax
-        # size figure so that its size matches the size of the model:
-        # fig = plt.figure(figsize=(20,(ymax-ymin)*20/(xmax-xmin))) 
-        if plot_type == 'morph':
-            pb_crit = len(times[times<times[-1]-pb_age])/float(len(times))
-            ob_crit = len(times[times<times[-1]-ob_age])/float(len(times))
-            green = (106/255.0,159/255.0,67/255.0) # vegetation color
-            pb_color = (189/255.0,153/255.0,148/255.0) # point bar color
-            ob_color = (15/255.0,58/255.0,65/255.0) # oxbow color
-            pb_cmap = make_colormap([green,green,pb_crit,green,pb_color,1.0,pb_color]) # colormap for point bars
-            ob_cmap = make_colormap([green,green,ob_crit,green,ob_color,1.0,ob_color]) # colormap for oxbows
-            ax.fill([xmin,xmax,xmax,xmin],[ymin,ymin,ymax,ymax],color=(106/255.0,159/255.0,67/255.0))
-        if plot_type == 'age':
-            age_cmap = cm.get_cmap(cmap_name,n_channels)
-        for i in range(0,len(times)):
-            if times[i] in sclt:
-                ind = np.where(sclt==times[i])[0][0]
-                x1 = chb.channels[ind].x
-                y1 = chb.channels[ind].y
-                W = chb.channels[ind].W
-                xm, ym = get_channel_banks(x1,y1,W)
-                if plot_type == 'morph':
-                    if times[i]>times[-1]-pb_age:
-                        ax.fill(xm,ym,facecolor=pb_cmap(i/float(len(times)-1)),edgecolor='k',linewidth=0.2)
-                    else:
-                        ax.fill(xm,ym,facecolor=pb_cmap(i/float(len(times)-1)))
-                if plot_type == 'strat':
-                    order += 1
-                    ax.fill(xm,ym,sns.xkcd_rgb["light tan"],edgecolor='k',linewidth=0.25,zorder=order)
-                if plot_type == 'age':
-                    order += 1
-                    ax.fill(xm,ym,facecolor=age_cmap(i/float(n_channels-1)),edgecolor='k',linewidth=0.1,zorder=order)
-            if times[i] in cot:
-                ind = np.where(cot==times[i])[0][0]
-                for j in range(0,len(chb.cutoffs[ind].x)):
-                    x1 = chb.cutoffs[ind].x[j]
-                    y1 = chb.cutoffs[ind].y[j]
-                    xm, ym = get_channel_banks(x1,y1,chb.cutoffs[ind].W)
-                    if plot_type == 'morph':
-                        ax.fill(xm,ym,color=ob_cmap(i/float(len(times)-1)))
-                    if plot_type == 'strat':
-                        order = order+1
-                        ax.fill(xm,ym,sns.xkcd_rgb["ocean blue"],edgecolor='k',linewidth=0.25,zorder=order)
-                    if plot_type == 'age':
-                        order += 1
-                        ax.fill(xm,ym,sns.xkcd_rgb[water_color],edgecolor='k',linewidth=0.1,zorder=order)
-        x1 = chb.channels[len(sclt)-1].x
-        y1 = chb.channels[len(sclt)-1].y
-        xm, ym = get_channel_banks(x1,y1,chb.channels[len(sclt)-1].W)
-        order = order+1
-        if plot_type == 'age':
-            ax.fill(xm,ym,color=sns.xkcd_rgb[water_color],zorder=order,edgecolor='k',linewidth=0.1)
-        else:
-            ax.fill(xm,ym,color=(16/255.0,73/255.0,90/255.0),zorder=order) #,edgecolor='k')
-        # plt.axis('equal')
-        # plt.xlim(xmin,xmax)
-        # plt.ylim(ymin,ymax)
-        # return fig
