@@ -12,8 +12,7 @@
 
 - numpy  
 - matplotlib   
-- scipy  
-- seaborn  
+- scipy 
 - PIL  
 - numba  
 - scikit-image
