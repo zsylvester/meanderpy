@@ -1,10 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 import scipy.interpolate
 from scipy.spatial import distance
 from scipy import ndimage
-from scipy.signal import savgol_filter
 from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
@@ -12,7 +10,6 @@ from matplotlib.colors import LinearSegmentedColormap
 import time, sys
 import numba
 import matplotlib.colors as mcolors
-import matplotlib.gridspec as gridspec
 from matplotlib import cm
 from tqdm import trange
 
@@ -140,7 +137,7 @@ class ChannelBelt:
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self,nit,saved_ts,deltas,pad,crdist,Cf,kl,kv,dt,dens,t1,t2,t3,aggr_factor,*D):
+    def migrate(self, nit, saved_ts, deltas, pad, crdist, Cf, kl, kv, dt, dens, t1, t2, t3, aggr_factor, *D):
         """method for computing migration rates along channel centerlines and moving the centerlines accordingly
 
         :param nit: number of iterations
@@ -269,7 +266,7 @@ class ChannelBelt:
                         plt.fill(xm,ym,facecolor=pb_cmap(i/float(len(times)-1)))
                 if plot_type == 'strat':
                     order += 1
-                    plt.fill(xm,ym,sns.xkcd_rgb["light tan"],edgecolor='k',linewidth=0.25,zorder=order)
+                    plt.fill(xm, ym, 'xkcd:light tan', edgecolor='k', linewidth=0.25, zorder=order)
                 if plot_type == 'age':
                     order += 1
                     plt.fill(xm,ym,facecolor=age_cmap(i/float(n_channels-1)),edgecolor='k',linewidth=0.1,zorder=order)
@@ -283,18 +280,19 @@ class ChannelBelt:
                         plt.fill(xm,ym,color=ob_cmap(i/float(len(times)-1)))
                     if plot_type == 'strat':
                         order = order+1
-                        plt.fill(xm,ym,sns.xkcd_rgb["ocean blue"],edgecolor='k',linewidth=0.25,zorder=order)
+                        plt.fill(xm, ym, 'xkcd:ocean blue', edgecolor='k', linewidth=0.25, zorder=order)
                     if plot_type == 'age':
                         order += 1
-                        plt.fill(xm,ym,sns.xkcd_rgb["sea blue"],edgecolor='k',linewidth=0.1,zorder=order)
+                        plt.fill(xm, ym, 'xkcd:sea blue', edgecolor='k', linewidth=0.1, zorder=order)
+
         x1 = self.channels[len(sclt)-1].x
         y1 = self.channels[len(sclt)-1].y
         xm, ym = get_channel_banks(x1,y1,self.channels[len(sclt)-1].W)
         order = order+1
         if plot_type == 'age':
-            plt.fill(xm,ym,color=sns.xkcd_rgb["sea blue"],zorder=order,edgecolor='k',linewidth=0.1)
+            plt.fill(xm, ym, color='xkcd:sea blue', zorder=order, edgecolor='k', linewidth=0.1)
         else:
-            plt.fill(xm,ym,color=(16/255.0,73/255.0,90/255.0),zorder=order) #,edgecolor='k')
+            plt.fill(xm, ym, color=(16/255.0,73/255.0,90/255.0), zorder=order) #,edgecolor='k')
         plt.axis('equal')
         plt.xlim(xmin,xmax)
         plt.ylim(ymin,ymax)
