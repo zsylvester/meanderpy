@@ -15,7 +15,6 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/zsylvester/meanderpy",
     packages=['meanderpy'],
-    # scripts=['/Users/zoltan/Dropbox/Channels/meanderpy/meanderpy/meanderpy.py'],
     install_requires=['numpy','matplotlib','seaborn',
         'scipy','numba','pillow','scikit-image','tqdm'],
     classifiers=[
