@@ -101,7 +101,7 @@ class ChannelBelt3D:
                 ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
         ax1.set_xlim(0,dx*(r-1))
         ax1.set_aspect(ve, adjustable='datalim')
-        ax1.savefig(export_file, dpi=300)
+        fig1.savefig(export_file, dpi=300)
         fig2 = plt.figure()
         ax2 = fig2.add_subplot(111)
         ax2.contourf(strat[:,:,ts-1],100,cmap='viridis')
