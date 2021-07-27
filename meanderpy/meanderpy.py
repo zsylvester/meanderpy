@@ -71,13 +71,64 @@ class ChannelBelt3D:
         self.dx = dx
         self.channels = channels
 
-    def plot_xsection(self, xsec, colors, ve, export_file):
+    def plot_xsection(self, xsec, colors, ve):
         """method for plotting a cross section through a 3D model; also plots map of 
         basal erosional surface and map of final geomorphic surface
+        :param xsec: location of cross section along the x-axis (in pixel/ voxel coordinates) 
+        :param colors: list of RGB values that define the colors for different facies
+        :param ve: vertical exaggeration
+        :return: handles to the three figures"""
+
+        strat = self.strat
+        dx = self.dx
+        fig1 = plt.figure(figsize=(20,5))
+        ax1 = fig1.add_subplot(111)
+        r,c,ts = np.shape(strat)
+        Xv = dx * np.arange(0,r)
+        for i in range(0,ts-1,3):
+            X1 = np.concatenate((Xv, Xv[::-1]))  
+            Y1 = np.concatenate((strat[:,xsec,i], strat[::-1,xsec,i+1])) 
+            Y2 = np.concatenate((strat[:,xsec,i+1], strat[::-1,xsec,i+2]))
+            Y3 = np.concatenate((strat[:,xsec,i+2], strat[::-1,xsec,i+3]))
+            if self.model_type == 'submarine':
+                ax1.fill(X1, Y1, facecolor=colors[2], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
+                ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
+            if self.model_type == 'fluvial':
+                ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
+                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
+        ax1.set_xlim(0,dx*(r-1))
+        ax1.set_aspect(ve, adjustable='datalim')
+        fig2 = plt.figure()
+        ax2 = fig2.add_subplot(111)
+        ax2.contourf(strat[:,:,ts-1],100,cmap='viridis')
+        ax2.contour(strat[:,:,ts-1],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
+        ax2.plot([xsec, xsec],[0,r],'k',linewidth=2)
+        ax2.axis([0,c,0,r])
+        ax2.set_aspect('equal', adjustable='box')        
+        ax2.set_title('final geomorphic surface')
+        ax2.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
+        fig3 = plt.figure()
+        ax3 = fig3.add_subplot(111)
+        ax3.contourf(strat[:,:,0],100,cmap='viridis')
+        ax3.contour(strat[:,:,0],100,colors='k',linestyles='solid',linewidths=0.1,alpha=0.4)
+        ax3.plot([xsec, xsec],[0,r],'k',linewidth=2)
+        ax3.axis([0,c,0,r])
+        ax3.set_aspect('equal', adjustable='box')
+        ax3.set_title('basal erosional surface')
+        ax3.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
+        return fig1,fig2,fig3
+
+    def plot_xsection_export(self, xsec, colors, ve, export_file):
+        """method for plotting a cross section through a 3D model; also plots map of 
+        basal erosional surface and map of final geomorphic surface. This version is to export
+        figure 1.
 
         :param xsec: location of cross section along the x-axis (in pixel/ voxel coordinates) 
         :param colors: list of RGB values that define the colors for different facies
         :param ve: vertical exaggeration
+        :param export_file: filename with suffix
         :return: handles to the three figures"""
 
         strat = self.strat
