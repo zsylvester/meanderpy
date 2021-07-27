@@ -161,7 +161,7 @@ class ChannelBelt3D:
         ax2.axis([0,c,0,r])
         ax2.set_aspect('equal', adjustable='box')        
         ax2.set_title('final geomorphic surface')
-        ax2.colorbar()
+        fig2.colorbar(ax2)
         ax2.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
         fig3 = plt.figure()
         ax3 = fig3.add_subplot(111)
@@ -171,7 +171,7 @@ class ChannelBelt3D:
         ax3.axis([0,c,0,r])
         ax3.set_aspect('equal', adjustable='box')
         ax3.set_title('basal erosional surface')
-        ax3.colorbar()
+        fig3.colorbar(ax3)
         ax3.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
         return fig1,fig2,fig3
 
