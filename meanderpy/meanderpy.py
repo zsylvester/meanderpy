@@ -729,17 +729,24 @@ def get_channel_banks(x,y,W):
 
 def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     """function for centerline rasterization and distance map calculation
-    inputs:
-    x,y,z - coordinates of centerline
-    xmin, xmax, ymin, ymax - x and y coordinates that define the area of interest
-    dx - gridcell size (m)
-    delta_s - distance between points along centerline (m)
-    returns:
-    cl_dist - distance map (distance from centerline)
-    x_pix, y_pix, z_pix - x,y, and z pixel coordinates of the centerline
-    s_pix - along-channel distance in pixels
-    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
-    x, y, z - x,y,z centerline coordinates clipped to the 3D model domain"""
+    :param x: x coordinates of centerline
+    :param y: y coordinates of centerline
+    :param z: z coordinates of centerline
+    :param xmin: minimum x coordinate that defines the area of interest
+    :param xmax: maximum x coordinate that defines the area of interest
+    :param ymin: minimum y coordinate that defines the area of interest
+    :param ymax: maximum y coordinate that defines the area of interest
+    :param dx: gridcell size (m)
+    :param delta_s: distance between points along centerline (m)
+    :return cl_dist: distance map (distance from centerline)
+    :return x_pix: x pixel coordinates of the centerline
+    :return y_pix: y pixel coordinates of the centerline
+    :return z_pix: z pizel coordinates of the centerline
+    :return s_pix: along-channel distance in pixels
+    :return z_map: map of reference channel thalweg elevation (elevation of closest point along centerline)
+    :return x: x centerline coordinates clipped to the 3D model domain
+    :return y: y centerline coordinates clipped to the 3D model domain
+    :return z: z centerline coordinates clipped to the 3D model domain"""
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
     x = x[(x>xmin) & (x<xmax)] 
@@ -821,13 +828,11 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
 
 def erosion_surface(h,w,cl_dist,z):
     """function for creating a parabolic erosional surface
-    inputs:
-    h - geomorphic channel depth (m)
-    w - geomorphic channel width (in pixels, as cl_dist is also given in pixels)
-    cl_dist - distance map (distance from centerline)
-    z - reference elevation (m)
-    returns:
-    surf - map of the quadratic erosional surface (m)
+    :param h: geomorphic channel depth (m)
+    :param w: geomorphic channel width (in pixels, as cl_dist is also given in pixels)
+    :param cl_dist: distance map (distance from centerline)
+    :param z: reference elevation (m)
+    :return surf: map of the erosional surface (m)
     """
     surf = z + (4*h/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     return surf
@@ -835,35 +840,43 @@ def erosion_surface(h,w,cl_dist,z):
 def point_bar_surface(cl_dist,z,h,w):
     """function for creating a Gaussian-based point bar surface
     used in 3D fluvial model
-    inputs:
-    cl_dist - distance map (distance from centerline)
-    z - reference elevation (m)
-    h - channel depth (m)
-    w - channel width, in pixels, as cl_dist is also given in pixels
-    returns:
-    pb - map of the Gaussian surface that can be used to from a point bar deposit (m)"""
+    :param cl_dist: distance map (distance from centerline)
+    :param z: reference elevation (m)
+    :param h: channel depth (m)
+    :param w: channel width, in pixels, as cl_dist is also given in pixels
+    :return pb: map of the Gaussian surface that can be used to from a point bar deposit (m)"""
     pb = z-h*np.exp(-(cl_dist**2)/(2*(w*0.33)**2))
     return pb
 
-def sand_surface(surf,bth,dcr,z_map,h):
+def sand_surface(surf, bth, dcr, z_map, h):
     """function for creating the top horizontal surface sand-rich deposit in the bottom of the channel
     used in 3D submarine channel models
-    inputs:
-    surf - current geomorphic surface
-    bth - thickness of sand deposit in axis of channel (m)
-    dcr - critical channel depth, above which there is no sand deposition (m)
-    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
-    h - channel depth (m)
-    returns:
-    th - thickness map of sand deposit (m)
-    relief - map of channel relief (m)"""
-    relief = np.abs(surf-z_map+h)
-    relief = np.abs(relief-np.amin(relief))
+    :param surf: current geomorphic surface
+    :param bth: thickness of sand deposit in axis of channel (m)
+    :param dcr: critical channel depth, above which there is no sand deposition (m)
+    :param z_map: map of reference channel thalweg elevation (elevation of closest point along centerline)
+    :param h: channel depth (m)
+    :return th: thickness map of sand deposit (m)
+    :return relief: map of channel relief (m)"""
+    relief = np.abs(surf - z_map + h)
+    relief = np.abs(relief - np.amin(relief))
     th = bth * (1 - relief/dcr) # bed thickness inversely related to relief
     th[th<0] = 0.0 # set negative th values to zero
     return th, relief
 
 def fluvial_levee(cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
+    """function for creating a levee layer in a fluvial 3D model
+    based on the diffusion-based overbank deposition model of Howard, 1992
+    :param h_mud: maximum thickness of overbank deposit (specific to time step)
+    :param cl_dist: distance map (distance from centerline)
+    :param topo: current topographic surface
+    :param E_max: maximum thickness of overbank deposit (specific to location)
+    :param w: channel width
+    :param diff_scale: diffusion length scale
+    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
+    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
+    :param dt: time step (in seconds)
+    :return levee: thickness of levee layer (same size as 'topo')"""
     dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
     dep_rate[cl_dist < 0.5*w] = 0  # get rid of the mud in the active channel
     dep_rate[dep_rate < 0] = 0
@@ -871,26 +884,40 @@ def fluvial_levee(cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
     return levee
 
 def submarine_levee(h_mud, cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
+    """function for creating a levee layer in a submarine 3D model
+    based on the diffusion-based overbank deposition model of Howard, 1992
+    :param h_mud: maximum thickness of overbank deposit (specific to time step)
+    :param cl_dist: distance map (distance from centerline)
+    :param topo: current topographic surface
+    :param E_max: maximum thickness of overbank deposit (specific to location)
+    :param w: channel width
+    :param diff_scale: diffusion length scale
+    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
+    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
+    :param dt: time step (in seconds)
+    :return levee: thickness of levee layer (same size as 'topo')"""
     dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
     dep_rate[dep_rate < 0] = 0
     levee = dep_rate * (dt/(365*24*60*60))
-    w = 1*w
-    surf3 = (h_mud+2) + (4*(h_mud+2)/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5) # the "2" is the difference between 'bth' and 'dcr'
-    levee = np.minimum(levee, surf3) # get rid of the mud in the active channel
+    surf3 = h_mud + (4*h_mud / w**2) * (cl_dist + w*0.5) * (cl_dist - w*0.5) # 'erosional' surface
+    levee = np.minimum(levee, surf3) # get rid of the mud in the axis of the active channel
     return levee
 
 def topostrat(topo):
     """function for converting a stack of geomorphic surfaces into stratigraphic surfaces
-    inputs:
-    topo - 3D numpy array of geomorphic surfaces
-    returns:
-    strat - 3D numpy array of stratigraphic surfaces
+    :param topo: 3D numpy array of geomorphic surfaces, with the oldest at index 0
+    :return strat: 3D numpy array of stratigraphic surfaces, with the oldest at index 0
     assumption is that topographic array has oldest surface at '0' z (third) index and therefore needs to be flipped twice
     """
-    strat = np.minimum.accumulate(topo[:, :, ::-1], axis=2)[:, :, ::-1] # this eliminates the 'for' loop and is faster
+    strat = np.minimum.accumulate(topo[:, :, ::-1], axis=2)[:, :, ::-1] # this eliminates the 'for' loop and is therefore faster
     return strat
 
-def eliminate_bad_pixels(img,img1):
+def eliminate_bad_pixels(img, img1):
+    """function for removing 'bad' pixels along channel centerline
+    :param img: black-and-white image of channel centerline (centerline pixels are 0)
+    :param img1: dilated version of centerline image 'img'
+    :return x_pix: cleaned array of x pixel xoordinates
+    :return y_pix: cleaned array of y pixel xoordinates"""
     x_ind = np.where(img1==0)[1][0]
     y_ind = np.where(img1==0)[0][0]
     img[y_ind:y_ind+2,x_ind:x_ind+2] = np.ones(1,).astype(np.uint8)
@@ -902,6 +929,11 @@ def eliminate_bad_pixels(img,img1):
     return x_pix, y_pix
 
 def order_cl_pixels(x_pix,y_pix):
+    '''function for ordering pixels along a channel centerline, starting on the left side
+    :param x_pix: unordered x pixel coordinates of the centerline
+    :param y_pix: unordered y pixel coordinates of the centerline
+    :return x_pix: ordered x pixel coordinates of the centerline
+    :return y_pix: ordered y pixel coordinates of the centerline'''
     dist = distance.cdist(np.array([x_pix,y_pix]).T,np.array([x_pix,y_pix]).T)
     dist[np.diag_indices_from(dist)]=100.0
     ind = np.argmin(x_pix) # select starting point on left side of image
