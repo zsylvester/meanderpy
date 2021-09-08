@@ -6,6 +6,7 @@ from scipy import ndimage
 from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
+from skimage import filters
 from matplotlib.colors import LinearSegmentedColormap
 import time, sys
 import numba
@@ -86,19 +87,19 @@ class ChannelBelt3D:
         ax1 = fig1.add_subplot(111)
         r,c,ts = np.shape(strat)
         Xv = dx * np.arange(0,r)
-        for i in range(0,ts-1,3):
+        for i in range(0,ts-1,2):
             X1 = np.concatenate((Xv, Xv[::-1]))  
             Y1 = np.concatenate((strat[:,xsec,i], strat[::-1,xsec,i+1])) 
             Y2 = np.concatenate((strat[:,xsec,i+1], strat[::-1,xsec,i+2]))
-            Y3 = np.concatenate((strat[:,xsec,i+2], strat[::-1,xsec,i+3]))
+            # Y3 = np.concatenate((strat[:,xsec,i+2], strat[::-1,xsec,i+3]))
             if self.model_type == 'submarine':
-                ax1.fill(X1, Y1, facecolor=colors[2], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
+                ax1.fill(X1, Y1, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
                 ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
-                ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
+                # ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
             if self.model_type == 'fluvial':
                 ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
-                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
-                ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
+                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # channel sand
+                # ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
         ax1.set_xlim(0,dx*(r-1))
         ax1.set_aspect(ve, adjustable='datalim')
         fig2 = plt.figure()
@@ -137,7 +138,7 @@ class ChannelBelt:
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self, nit, saved_ts, deltas, pad, crdist, Cf, kl, kv, dt, dens, t1, t2, t3, aggr_factor, *D):
+    def migrate(self, nit, saved_ts, deltas, pad, crdist, depths, Cfs, kl, kv, dt, dens, t1, t2, t3, aggr_factor):
         """method for computing migration rates along channel centerlines and moving the centerlines accordingly
 
         :param nit: number of iterations
@@ -145,7 +146,8 @@ class ChannelBelt:
         :param deltas: distance between nodes on centerline
         :param pad: padding (number of nodepoints along centerline)
         :param crdist: threshold distance at which cutoffs occur
-        :param Cf: dimensionless Chezy friction factor
+        :param depths: array of channel depths (can very across iterations)
+        :param Cf: array of dimensionless Chezy friction factors (can vary across iterations)
         :param kl: migration rate constant (m/s)
         :param kv: vertical slope-dependent erosion rate constant (m/s)
         :param dt: time step (s)
@@ -158,11 +160,8 @@ class ChannelBelt:
 
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
-        W = channel.W;
-        if len(D)==0: 
-            D = channel.D
-        else:
-            D = D[0]
+        W = channel.W
+        D = channel.D
         k = 1.0 # constant in HK equation
         xc = [] # initialize cutoff coordinates
         # determine age of last channel:
@@ -179,7 +178,8 @@ class ChannelBelt:
         omega = -1.0 # constant in migration rate calculation (Howard and Knutson, 1984)
         gamma = 2.5 # from Ikeda et al., 1981 and Howard and Knutson, 1984
         for itn in trange(nit): # main loop
-            # update_progress(itn/nit)
+            D = depths[itn]
+            Cf = Cfs[itn]
             x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
@@ -207,8 +207,8 @@ class ChannelBelt:
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
                 self.cutoffs.append(cutoff)
-            # saving centerlines:
-            if np.mod(itn,saved_ts)==0:
+            # saving centerlines (with the exception of first channel):
+            if (np.mod(itn, saved_ts) == 0) & (itn > 0):
                 self.cl_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
@@ -338,168 +338,149 @@ class ChannelBelt:
             fig.savefig(fname, bbox_inches='tight')
             plt.close()
 
-    def build_3d_model(self,model_type,h_mud,levee_width,h,w,bth,dcr,dx,delta_s,starttime,endtime,xmin,xmax,ymin,ymax):
-        """method for building 3D model from set of centerlines (that are part of a ChannelBelt object)
- 
-        :param model_type: model type ('fluvial' or 'submarine')
-        :param h_mud: maximum thickness of overbank mud
-        :param levee_width: width of overbank mud
-        :param h: channel depth
-        :param w: channel width
-        :param bth: thickness of channel sand (only used in submarine models)
-        :param dcr: critical channel depth where sand thickness goes to zero (only used in submarine models)
-        :param dx: cell size in x and y directions
-        :param delta_s: sampling distance alogn centerlines
-        :param starttime: age of centerline that will be used as the first centerline in the model
-        :param endtime: age of centerline that will be used as the last centerline in the model
-        :param xmin: minimum x coordinate that defines the model domain; if xmin is set to zero, 
-        a plot of the centerlines is generated and the model domain has to be defined by clicking its upper left and lower right corners
-        :param xmax: maximum x coordinate that defines the model domain
-        :param ymin: minimum y coordinate that defines the model domain
-        :param ymax: maximum y coordinate that defines the model domain
-        :return chb_3d: a ChannelBelt3D object
-        :return xmin, xmax, ymin, ymax: x and y coordinates that define the model domain (so that they can be reused later)"""
+def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, starttime, endtime, diff_scale, v_fine, v_coarse, xmin, xmax, ymin, ymax):
+    """function for building 3D model from set of centerlines (that are part of a ChannelBelt object)
 
-        sclt = np.array(self.cl_times)
-        ind1 = np.where(sclt>=starttime)[0][0] 
-        ind2 = np.where(sclt<=endtime)[0][-1]
-        sclt = sclt[ind1:ind2+1]
-        channels = self.channels[ind1:ind2+1]
-        cot = np.array(self.cutoff_times)
-        if (len(cot)>0) & (len(np.where(cot>=starttime)[0])>0) & (len(np.where(cot<=endtime)[0])>0):
-            cfind1 = np.where(cot>=starttime)[0][0] 
-            cfind2 = np.where(cot<=endtime)[0][-1]
-            cot = cot[cfind1:cfind2+1]
-            cutoffs = self.cutoffs[cfind1:cfind2+1]
-        else:
-            cot = []
-            cutoffs = []
-        n_steps = len(sclt) # number of events
-        if xmin == 0: # plot centerlines and define model domain
-            plt.figure(figsize=(15,4))
-            maxX, minY, maxY = 0, 0, 0
-            for i in range(n_steps): # plot centerlines
-                plt.plot(channels[i].x,channels[i].y,'k')
-                maxX = max(maxX,np.max(channels[i].x))
-                maxY = max(maxY,np.max(channels[i].y))
-                minY = min(minY,np.min(channels[i].y))
-            plt.axis([0,maxX,minY-10*w,maxY+10*w])
-            plt.gca().set_aspect('equal', adjustable='box')
-            plt.tight_layout()
-            pts = np.zeros((2,2))
-            for i in range(0,2):
-                pt = np.asarray(plt.ginput(1))
-                pts[i,:] = pt
-                plt.scatter(pt[0][0],pt[0][1])
-            plt.plot([pts[0,0],pts[1,0],pts[1,0],pts[0,0],pts[0,0]],[pts[0,1],pts[0,1],pts[1,1],pts[1,1],pts[0,1]],'r')
-            xmin = min(pts[0,0],pts[1,0])
-            xmax = max(pts[0,0],pts[1,0])
-            ymin = min(pts[0,1],pts[1,1])
-            ymax = max(pts[0,1],pts[1,1])
-        iwidth = int((xmax-xmin)/dx)
-        iheight = int((ymax-ymin)/dx)
-        topo = np.zeros((iheight,iwidth,4*n_steps)) # array for storing topographic surfaces
-        dists = np.zeros((iheight,iwidth,n_steps))
-        zmaps = np.zeros((iheight,iwidth,n_steps))
-        facies = np.zeros((4*n_steps,1))
-        # create initial topography:
-        x1 = np.linspace(0,iwidth-1,iwidth)
-        y1 = np.linspace(0,iheight-1,iheight)
-        xv, yv = np.meshgrid(x1,y1)
-        z1 = channels[0].z
-        z1 = z1[(channels[0].x>xmin) & (channels[0].x<xmax)]
-        topoinit = z1[0] - ((z1[0]-z1[-1])/(xmax-xmin))*xv*dx # initial (sloped) topography
-        topo[:,:,0] = topoinit.copy()
-        surf = topoinit.copy()
-        facies[0] = np.NaN
-        # generate surfaces:
-        channels3D = []
-        for i in trange(n_steps):
-            x = channels[i].x
-            y = channels[i].y
-            z = channels[i].z
-            cutoff_ind = []
-            # check if there were cutoffs during the last time step and collect indices in an array:
-            for j in range(len(cot)):
-                if (cot[j] >= sclt[i-1]) & (cot[j] < sclt[i]):
-                    cutoff_ind = np.append(cutoff_ind,j)
-            # create distance map:
-            cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x1, y1, z1 = dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s)
-            if i == 0:
-                cl_dist_prev = cl_dist
-            # erosion:
-            surf = np.minimum(surf,erosion_surface(h,w/dx,cl_dist,z_map))
-            topo[:,:,4*i] = surf # erosional surface
-            dists[:,:,i] = cl_dist
-            zmaps[:,:,i] = z_map
-            facies[4*i] = np.NaN
+    :param model_type: model type ('fluvial' or 'submarine')
+    :param h_mud: maximum thickness of overbank deposit
+    :param h: channel depth
+    :param w: channel width
+    :param bth: thickness of channel sand (only used in submarine models)
+    :param dcr: critical channel depth where sand thickness goes to zero (only used in submarine models)
+    :param dx: cell size in x and y directions
+    :param delta_s: sampling distance alogn centerlines
+    :param starttime: age of centerline that will be used as the first centerline in the model
+    :param endtime: age of centerline that will be used as the last centerline in the model
+    :param xmin: minimum x coordinate that defines the model domain; if xmin is set to zero, 
+    a plot of the centerlines is generated and the model domain has to be defined by clicking its upper left and lower right corners
+    :param xmax: maximum x coordinate that defines the model domain
+    :param ymin: minimum y coordinate that defines the model domain
+    :param ymax: maximum y coordinate that defines the model domain
+    :param diff_scale: diffusion length scale (for overbank deposition)
+    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
+    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
+    :return chb_3d: a ChannelBelt3D object
+    :return xmin, xmax, ymin, ymax: x and y coordinates that define the model domain (so that they can be reused later)"""
 
-            if model_type == 'fluvial':
-                pb = point_bar_surface(cl_dist,z_map,h,w/dx)
-                th = np.maximum(surf,pb)-surf
-                th_oxbows = th.copy()
-                # setting sand thickness to zero at cutoff locations:
-                if len(cutoff_ind)>0:
-                    cutoff_dists = 1e10*np.ones(np.shape(th)) #initialize cutoff_dists with a large number
-                    for j in range(len(cutoff_ind)):
-                        cutoff_dist, cfx_pix, cfy_pix = cl_dist_map(cutoffs[int(cutoff_ind[j])].x[0],cutoffs[int(cutoff_ind[j])].y[0],cutoffs[int(cutoff_ind[j])].z[0],xmin,xmax,ymin,ymax,dx)
-                        cutoff_dists = np.minimum(cutoff_dists,cutoff_dist)
-                    th_oxbows[cutoff_dists>=0.9*w/dx] = 0 # set oxbow fill thickness to zero outside of oxbows
-                    th[cutoff_dists<0.9*w/dx] = 0 # set point bar thickness to zero inside of oxbows
-                else: # no cutoffs
-                    th_oxbows = np.zeros(np.shape(th))
-                th[th<0] = 0 # eliminate negative th values
-                surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
-                topo[:,:,4*i+1] = surf # top of oxbow mud
-                facies[4*i+1] = 0
-                surf = surf+th # update topographic surface with sand thickness
-                topo[:,:,4*i+2] = surf # top of sand
-                facies[4*i+2] = 1
-                surf = surf + mud_surface(h_mud,levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
-                topo[:,:,4*i+3] = surf # top of levee
-                facies[4*i+3] = 2
-                channels3D.append(Channel(x1-xmin,y1-ymin,z1,w,h))
+    sclt = np.array(chb.cl_times)
+    ind1 = np.where(sclt >= starttime)[0][0] 
+    ind2 = np.where(sclt <= endtime)[0][-1]
+    sclt = sclt[ind1:ind2+1]
+    channels = chb.channels[ind1:ind2+1]
+    cot = np.array(chb.cutoff_times)
+    if (len(cot)>0) & (len(np.where(cot >= starttime)[0])>0) & (len(np.where(cot <= endtime)[0])>0):
+        cfind1 = np.where(cot >= starttime)[0][0] 
+        cfind2 = np.where(cot <= endtime)[0][-1]
+        cot = cot[cfind1:cfind2+1]
+        cutoffs = chb.cutoffs[cfind1:cfind2+1]
+    else:
+        cot = []
+        cutoffs = []
+    n_steps = len(sclt) # number of events
+    if xmin == 0: # plot centerlines and define model domain
+        plt.figure(figsize=(15,4))
+        maxX, minY, maxY = 0, 0, 0
+        for i in range(n_steps): # plot centerlines
+            plt.plot(channels[i].x, channels[i].y, 'k')
+            maxX = max(maxX, np.max(channels[i].x))
+            maxY = max(maxY, np.max(channels[i].y))
+            minY = min(minY, np.min(channels[i].y))
+        plt.axis([0, maxX, minY-10*w, maxY+10*w])
+        plt.gca().set_aspect('equal', adjustable='box')
+        plt.tight_layout()
+        pts = np.zeros((2,2))
+        for i in range(0,2):
+            pt = np.asarray(plt.ginput(1))
+            pts[i,:] = pt
+            plt.scatter(pt[0][0], pt[0][1])
+        plt.plot([pts[0,0], pts[1,0], pts[1,0], pts[0,0], pts[0,0]], [pts[0,1], pts[0,1], pts[1,1], pts[1,1], pts[0,1]], 'r')
+        xmin = min(pts[0,0], pts[1,0])
+        xmax = max(pts[0,0], pts[1,0])
+        ymin = min(pts[0,1], pts[1,1])
+        ymax = max(pts[0,1], pts[1,1])
+    iwidth = int((xmax-xmin)/dx)
+    iheight = int((ymax-ymin)/dx)
+    topo = np.zeros((iheight, iwidth, 3*n_steps)) # array for storing topographic surfaces
+    dists = np.zeros((iheight, iwidth, n_steps))
+    zmaps = np.zeros((iheight, iwidth, n_steps))
+    facies = np.zeros((3*n_steps, 1))
+    cutoff_levels = np.nan * np.zeros((n_steps, 1))
+    # create initial topography:
+    x1 = np.linspace(0, iwidth-1, iwidth)
+    y1 = np.linspace(0, iheight-1, iheight)
+    xv, yv = np.meshgrid(x1,y1)
+    z1 = channels[0].z
+    z1 = z1[(channels[0].x > xmin) & (channels[0].x < xmax)]
+    topoinit = z1[0] - ((z1[0] - z1[-1]) / (xmax - xmin)) * xv * dx # initial (sloped) topography
+    topo[:,:,0] = topoinit.copy()
+    surf = topoinit.copy()
+    facies[0] = np.NaN
+    # generate surfaces:
+    channels3D = []
+    for i in trange(n_steps):
+        x = channels[i].x
+        y = channels[i].y
+        z = channels[i].z
+        cutoff_ind = []
+        # check if there were cutoffs during the last time step and collect indices in an array:
+        for j in range(len(cot)):
+            if (cot[j] >= sclt[i-1]) & (cot[j] < sclt[i]):
+                cutoff_ind.append(j)
+        # create distance map:
+        cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x1, y1, z1 = dist_map(x, y, z, xmin, xmax, ymin, ymax, dx, delta_s)
+        if i == 0:
+            cl_dist_prev = cl_dist
+        # erosion:
+        surf = np.minimum(surf,erosion_surface(h,w/dx,cl_dist,z_map))
+        topo[:,:,3*i] = surf # erosional surface
+        dists[:,:,i] = cl_dist # distance map
+        zmaps[:,:,i] = z_map # map of closest channel elevation
+        facies[3*i] = np.NaN # array for facies code
 
-            if model_type == 'submarine':
-                surf = surf + mud_surface(h_mud[i],levee_width/dx,cl_dist,w/dx,z_map,surf) # mud/levee deposition
-                topo[:,:,4*i+1] = surf # top of levee
-                facies[4*i+1] = 2
-                # sand thickness:
-                th, relief = sand_surface(surf,bth,dcr,z_map,h)
-                th[th<0] = 0 # eliminate negative th values
-                th[cl_dist>1.0*w/dx] = 0 # eliminate sand outside of channel
-                th_oxbows = th.copy()
-                # setting sand thickness to zero at cutoff locations:
-                if len(cutoff_ind)>0:
-                    cutoff_dists = 1e10*np.ones(np.shape(th)) #initialize cutoff_dists with a large number
-                    for j in range(len(cutoff_ind)):
-                        cutoff_dist, cfx_pix, cfy_pix = cl_dist_map(cutoffs[int(cutoff_ind[j])].x[0],cutoffs[int(cutoff_ind[j])].y[0],cutoffs[int(cutoff_ind[j])].z[0],xmin,xmax,ymin,ymax,dx)
-                        cutoff_dists = np.minimum(cutoff_dists,cutoff_dist)
-                    th_oxbows[cutoff_dists>=0.9*w/dx] = 0 # set oxbow fill thickness to zero outside of oxbows
-                    th[cutoff_dists<0.9*w/dx] = 0 # set point bar thickness to zero inside of oxbows
-                    # adding back sand near the channel axis (submarine only):
-                    # th[cl_dist<0.5*w/dx] = bth*(1 - relief[cl_dist<0.5*w/dx]/dcr)
-                else: # no cutoffs
-                    th_oxbows = np.zeros(np.shape(th))
-                surf = surf+th_oxbows # update topographic surface with oxbow deposit thickness
-                topo[:,:,4*i+2] = surf # top of oxbow mud
-                facies[4*i+2] = 0
-                surf = surf+th # update topographic surface with sand thickness
-                topo[:,:,4*i+3] = surf # top of sand
-                facies[4*i+3] = 1
-                channels3D.append(Channel(x1-xmin,y1-ymin,z1,w,h))
-
-            cl_dist_prev = cl_dist.copy()
-        topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
-        strat = topostrat(topo) # create stratigraphic surfaces
-        strat = np.delete(strat, np.arange(4*n_steps+1)[1::4], 2) # get rid of unnecessary stratigraphic surfaces (duplicates)
-        facies = np.delete(facies, np.arange(4*n_steps)[::4]) # get rid of unnecessary facies layers (NaNs)
         if model_type == 'fluvial':
-            facies_code = {0:'oxbow', 1:'point bar', 2:'levee'}
+            pb = point_bar_surface(cl_dist,z_map,h,w/dx)
+            th = np.maximum(surf,pb)-surf
+            th[cl_dist > 1.0 * w/dx] = 0 # eliminate sand outside of channel
+            th[th<0] = 0 # eliminate negative thickness values
+            surf = surf+th # update topographic surface with sand thickness
+            topo[:,:,3*i+1] = surf # top of sand
+            facies[3*i+1] = 1 # facies code for point bar sand
+            E_max = z_map + h_mud[i]
+            levee = fluvial_levee(cl_dist, surf, E_max, w/dx, diff_scale, v_fine, v_coarse, dt)
+            surf = surf + levee # mud/levee deposition 
+            topo[:,:,3*i+2] = surf # top of levee
+            facies[3*i+2] = 2 # facies code for overbank
+            channels3D.append(Channel(x1-xmin, y1-ymin, z1, w, h))
+
         if model_type == 'submarine':
-            facies_code = {0:'oxbow', 1:'channel sand', 2:'levee'}
-        chb_3d = ChannelBelt3D(model_type,topo,strat,facies,facies_code,dx,channels3D)
-        return chb_3d, xmin, xmax, ymin, ymax #, dists, zmaps
+            th, relief = sand_surface(surf, bth, dcr, z_map, h) # sandy channel deposit
+            th[th < 0] = 0 # eliminate negative thickness values
+            ws = w * (dcr/h)**0.5 # channel width at the top of the channel deposit
+            th[cl_dist > 1.0 * ws/dx] = 0 # eliminate sand outside of channel
+            surf = surf+th # update topographic surface with sand thickness
+            topo[:,:,3*i+1] = surf # top of sand
+            facies[3*i+1] = 1 # facies code for channel sand
+            # need to blur z-map so that levees don't have artefacts:
+            blurred = filters.gaussian(z_map, sigma=(50, 50), truncate=3.5, multichannel=False)
+            E_max = blurred + h_mud[i]
+            levee = submarine_levee(h_mud[i], cl_dist, surf, E_max, w/dx, diff_scale, v_fine, v_coarse, dt)
+            surf = surf + levee # mud/levee deposition
+            topo[:,:,3*i+2] = surf # top of levee
+            facies[3*i+2] = 2 # facies code for overbank 
+            channels3D.append(Channel(x1-xmin, y1-ymin, z1, w, h))
+
+        cl_dist_prev = cl_dist.copy()
+    topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
+    strat = topostrat(topo) # create stratigraphic surfaces
+    strat = np.delete(strat, np.arange(3*n_steps+1)[1::3], 2) # get rid of unnecessary stratigraphic surfaces (duplicates)
+    facies = np.delete(facies, np.arange(3*n_steps)[::3]) # get rid of unnecessary facies layers (NaNs)
+    if model_type == 'fluvial':
+        facies_code = {1:'point bar', 2:'levee'}
+    if model_type == 'submarine':
+        facies_code = {1:'channel sand', 2:'levee'}
+    chb_3d = ChannelBelt3D(model_type, topo, strat, facies, facies_code, dx, channels3D)
+    # return chb_3d, xmin, xmax, ymin, ymax, dists, cutoff_dists_all, cutoff_levels, zmaps
+    return chb_3d, xmin, xmax, ymin, ymax, dists, zmaps
 
 def resample_centerline(x,y,z,deltas):
     '''resample centerline so that 'deltas' is roughly constant, using parametric 
@@ -882,26 +863,21 @@ def sand_surface(surf,bth,dcr,z_map,h):
     th[th<0] = 0.0 # set negative th values to zero
     return th, relief
 
-def mud_surface(h_mud,levee_width,cl_dist,w,z_map,topo):
-    """function for creating a map of overbank deposit thickness
-    inputs:
-    h_mud - maximum thickness of overbank deposit (m)
-    levee_width - half-width of overbank deposit (m)
-    cl_dist - distance map (distance from centerline)
-    w - channel width (in pixels, as cl_dist is also given in pixels)
-    z_map - map of reference channel thalweg elevation (elevation of closest point along centerline)
-    topo - current geomorphic surface
-    returns:
-    surf - map of overbank deposit thickness (m)"""
-    # create a surface that thins linearly away from the channel centerline:
-    surf1 = (-2*h_mud/levee_width)*cl_dist+h_mud;
-    surf2 = (2*h_mud/levee_width)*cl_dist+h_mud;
-    surf = np.minimum(surf1,surf2)
-    # surface for 'eroding' the central part of the mud layer:
-    surf3 = h_mud + (4*1.5*h_mud/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5) 
-    surf = np.minimum(surf,surf3)
-    surf[surf<0] = 0; # eliminate negative thicknesses
-    return surf
+def fluvial_levee(cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
+    dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
+    dep_rate[cl_dist < 0.5*w] = 0  # get rid of the mud in the active channel
+    dep_rate[dep_rate < 0] = 0
+    levee = dep_rate * (dt/(365*24*60*60))
+    return levee
+
+def submarine_levee(h_mud, cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
+    dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
+    dep_rate[dep_rate < 0] = 0
+    levee = dep_rate * (dt/(365*24*60*60))
+    w = 1*w
+    surf3 = (h_mud+2) + (4*(h_mud+2)/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5) # the "2" is the difference between 'bth' and 'dcr'
+    levee = np.minimum(levee, surf3) # get rid of the mud in the active channel
+    return levee
 
 def topostrat(topo):
     """function for converting a stack of geomorphic surfaces into stratigraphic surfaces
@@ -909,49 +885,10 @@ def topostrat(topo):
     topo - 3D numpy array of geomorphic surfaces
     returns:
     strat - 3D numpy array of stratigraphic surfaces
+    assumption is that topographic array has oldest surface at '0' z (third) index and therefore needs to be flipped twice
     """
-    r,c,ts = np.shape(topo)
-    strat = np.copy(topo)
-    for i in (range(0,ts)):
-        strat[:,:,i] = np.amin(topo[:,:,i:], axis=2)
+    strat = np.minimum.accumulate(topo[:, :, ::-1], axis=2)[:, :, ::-1] # this eliminates the 'for' loop and is faster
     return strat
-
-def cl_dist_map(x,y,z,xmin,xmax,ymin,ymax,dx):
-    """function for centerline rasterization and distance map calculation (does not return zmap)
-    used for cutoffs only 
-    inputs:
-    x,y,z - coordinates of centerline
-    xmin, xmax, ymin, ymax - x and y coordinates that define the area of interest
-    dx - gridcell size (m)
-    returns:
-    cl_dist - distance map (distance from centerline)
-    x_pix, y_pix, - x and y pixel coordinates of the centerline
-    """
-    y = y[(x>xmin) & (x<xmax)]
-    z = z[(x>xmin) & (x<xmax)]
-    x = x[(x>xmin) & (x<xmax)]    
-    xdist = xmax - xmin
-    ydist = ymax - ymin
-    iwidth = int((xmax-xmin)/dx)
-    iheight = int((ymax-ymin)/dx)
-    xratio = iwidth/xdist
-    # create list with pixel coordinates:
-    pixels = []
-    for i in range(0,len(x)):
-        px = int(iwidth - (xmax - x[i]) * xratio)
-        py = int(iheight - (ymax - y[i]) * xratio)
-        pixels.append((px,py))
-    # create image and numpy array:
-    img = Image.new("RGB", (iwidth, iheight), "white")
-    draw = ImageDraw.Draw(img)
-    draw.line(pixels, fill="rgb(0, 0, 0)") # draw centerline as black line
-    pix = np.array(img)
-    cl = pix[:,:,0]
-    cl[cl==255] = 1 # set background to 1 (centerline is 0)
-    # calculate Euclidean distance map:
-    cl_dist, inds = ndimage.distance_transform_edt(cl, return_indices=True)
-    y_pix,x_pix = np.where(cl==0)
-    return cl_dist, x_pix, y_pix
 
 def eliminate_bad_pixels(img,img1):
     x_ind = np.where(img1==0)[1][0]
