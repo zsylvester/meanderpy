@@ -119,7 +119,7 @@ class ChannelBelt3D:
         ax3.set_aspect('equal', adjustable='box')
         ax3.set_title('basal erosional surface')
         ax3.tick_params(bottom=False,top=False,left=False,right=False,labelbottom=False,labelleft=False)
-        return fig1,fig2,fig3
+        return fig1, fig2, fig3
 
 class ChannelBelt:
     """class for ChannelBelt objects"""

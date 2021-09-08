@@ -6,7 +6,7 @@ long_description = """\
 
 setuptools.setup(
     name="meanderpy",
-    version="0.1.8",
+    version="0.1.9",
     author="Zoltan Sylvester",
     author_email="zoltan.sylvester@beg.utexas.edu",
     description="meanderpy: a simple model of meandering",
@@ -18,7 +18,6 @@ setuptools.setup(
     install_requires=['numpy','matplotlib',
         'scipy','numba','pillow','scikit-image','tqdm'],
     classifiers=[
-        "Programming Language :: Python :: 2",
         "Programming Language :: Python :: 3",
         'Intended Audience :: Science/Research',
         "License :: OSI Approved :: Apache Software License",
