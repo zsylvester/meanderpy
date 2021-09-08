@@ -93,12 +93,11 @@ class ChannelBelt3D:
             Y2 = np.concatenate((strat[:,xsec,i+1], strat[::-1,xsec,i+2]))
             # Y3 = np.concatenate((strat[:,xsec,i+2], strat[::-1,xsec,i+3]))
             if self.model_type == 'submarine':
-                ax1.fill(X1, Y1, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # oxbow mud
-                ax1.fill(X1, Y2, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # point bar sand
-                # ax1.fill(X1, Y3, facecolor=colors[1], linewidth=0.5) # levee mud
+                ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # channel sand
+                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
             if self.model_type == 'fluvial':
-                ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
-                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # channel sand
+                ax1.fill(X1, Y1, facecolor=colors[0], linewidth=0.5, edgecolor=[0,0,0]) # channel sand
+                ax1.fill(X1, Y2, facecolor=colors[1], linewidth=0.5, edgecolor=[0,0,0]) # levee mud
                 # ax1.fill(X1, Y3, facecolor=colors[2], linewidth=0.5) # channel sand
         ax1.set_xlim(0,dx*(r-1))
         ax1.set_aspect(ve, adjustable='datalim')
