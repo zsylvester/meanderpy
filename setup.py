@@ -1,24 +1,27 @@
-import setuptools
+from setuptools import setup, find_namespace_packages
 
-long_description = """\
-'meanderpy' is a Python module that implements a simple numerical model of meandering, the one described by Howard & Knutson in their 1984 paper "Sufficient Conditions for River Meandering: A Simulation Approach". This is a kinematic model that is based on computing migration rate as the weighted sum of upstream curvatures; flow velocity does not enter the equation. Curvature is transformed into a 'nominal migration rate' through multiplication with a migration rate (or erodibility) constant.
-"""
+VERSION="0.1.9"
+DESCRIPTION = "meanderpy: a simple model of meandering"
+with open("README.md", "r") as f:
+	long_description_readme = f.read()
 
-setuptools.setup(
+setuptools(
     name="meanderpy",
-    version="0.1.9",
+    version=VERSION,
     author="Zoltan Sylvester",
     author_email="zoltan.sylvester@beg.utexas.edu",
-    description="meanderpy: a simple model of meandering",
+    description=DESCRIPTION,
     keywords = 'rivers, meandering, geomorphology, stratigraphy',
-    long_description=long_description,
+    long_description=long_description_readme,
     long_description_content_type="text/markdown",
     url="https://github.com/zsylvester/meanderpy",
-    packages=['meanderpy'],
-    install_requires=['numpy','matplotlib',
-        'scipy','numba','pillow','scikit-image','tqdm'],
+    download_url="https://github.com/zsylvester/meanderpy/archive/refs/tags/v{0}tar.gz".format(VERSION),
+    packages=find_namespace_packages(include=['meanderpy', 'meanderpy.*']),
+    install_requires=['numpy','matplotlib', 'scipy','numba','pillow','scikit-image','tqdm'],
     classifiers=[
         "Programming Language :: Python :: 3",
+        "Topic :: Scientific/Engineering :: Physics",
+		"Topic :: Scientific/Engineering :: Visualization",
         'Intended Audience :: Science/Research',
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
