@@ -5,7 +5,7 @@ DESCRIPTION = "meanderpy: a simple model of meandering"
 with open("README.md", "r") as f:
 	long_description_readme = f.read()
 
-setuptools(
+setup(
     name="meanderpy",
     version=VERSION,
     author="Zoltan Sylvester",
