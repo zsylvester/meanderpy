@@ -1,4 +1,4 @@
-<img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_logo.svg" width="300">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/755e95a8a87c82df6384694e0192fc8a02af4782/meanderpy_logo.svg" width="300">
 
 ## Description
 
@@ -21,7 +21,7 @@
 
 ## Usage
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_sketch.png" width="600">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/master/meanderpy_sketch.png" width="600">
 
 The sketch above shows the three 'meanderpy' components: channel, cutoff, channel belt. These are implemented as classes; a 'Channel' and a 'Cutoff' are defined by their width, depth, and x,y,z centerline coordinates, and a 'ChannelBelt' is a collection of channels and cutoffs. In addition, the 'ChannelBelt' object also has a 'cl_times' and a 'cutoff_times' attribute that specify the age of the channels and the cutoffs. This age is relative to the start time of the simulation (= the first channel, age = 0.0).
 
@@ -77,7 +77,7 @@ chb.migrate(1000,saved_ts,deltas,pad,crdist,depths,Cfs,kl,kv,dt,dens,t1,t2,t3,ag
 fig = chb.plot('strat', 20, 60, chb.cl_times[-1], len(chb.channels)) # plotting
 ```
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/meanderpy_strat_vs_morph.png" width="1000">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/master/meanderpy_strat_vs_morph.png" width="1000">
 
 A series of movie frames (in PNG format) can be created using the 'create_movie' method:
 
@@ -90,7 +90,7 @@ The frames have to be assembled into an animation outside of 'meanderpy'.
 
 'meanderpy' includes the functionality to build 3D stratigraphic models. However, this functionality is decoupled from the centerline generation, mainly because it would be computationally expensive to generate surfaces for all centerlines, along their whole lengths. Instead, the 3D model is only created after a Channelbelt object has been generated; a model domain is defined either through specifying the xmin, xmax, ymin, ymax coordinates, or through clicking the upper left and lower right corners of the domain, using the matplotlib 'ginput' command:
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/define_3D_domain.png" width="600">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/master/define_3D_domain.png" width="600">
 
 Important parameters for a fluvial 3D model are the following:
 
@@ -112,9 +112,9 @@ fig1,fig2,fig3 = chb_3d.plot_xsection(343, [[0.5,0.25,0],[0.9,0.9,0],[0.5,0.25,0
 ```
 This function also plots the basal erosional surface and the final topographic surface. An example topographic surface and a zoomed-in cross section are shown below.
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_map.png" width="400">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/master/fluvial_meanderpy_example_map.png" width="400">
 
-<img src="https://github.com/zsylvester/meanderpy/blob/master/fluvial_meanderpy_example_section.png" width="900">
+<img src="https://raw.githubusercontent.com/zsylvester/meanderpy/master/fluvial_meanderpy_example_section.png" width="900">
 
 ## Google Colab notebook
 
