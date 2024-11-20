@@ -6,25 +6,38 @@ from scipy import ndimage
 from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
-from skimage import filters
+# from skimage import filters
+from scipy.ndimage import gaussian_filter
 from matplotlib.colors import LinearSegmentedColormap
 import time, sys
 import numba
 import matplotlib.colors as mcolors
 from matplotlib import cm
 from tqdm import trange
+import h5py
+from scipy.signal import savgol_filter
+
 
 class Channel:
     """class for Channel objects"""
 
     def __init__(self,x,y,z,W,D):
-        """Initialize Channel object
+        """
+        Initialize Channel object.
 
-        :param x: x-coordinate of centerline
-        :param y: y-coordinate of centerline
-        :param z: z-coordinate of centerline
-        :param W: channel width
-        :param D: channel depth"""
+        Parameters
+        ----------
+        x : array_like
+            x-coordinate of centerline.
+        y : array_like
+            y-coordinate of centerline.
+        z : array_like
+            z-coordinate of centerline.
+        W : float
+            Channel width.
+        D : float
+            Channel depth.
+        """
 
         self.x = x
         self.y = y
@@ -36,13 +49,22 @@ class Cutoff:
     """class for Cutoff objects"""
 
     def __init__(self,x,y,z,W,D):
-        """Initialize Cutoff object
+        """
+        Initialize Cutoff object.
 
-        :param x: x-coordinate of centerline
-        :param y: y-coordinate of centerline
-        :param z: z-coordinate of centerline
-        :param W: channel width
-        :param D: channel depth"""
+        Parameters
+        ----------
+        x : array_like
+            x-coordinate of centerline.
+        y : array_like
+            y-coordinate of centerline.
+        z : array_like
+            z-coordinate of centerline.
+        W : float
+            Channel width.
+        D : float
+            Channel depth.
+        """
 
         self.x = x
         self.y = y
@@ -54,15 +76,26 @@ class ChannelBelt3D:
     """class for 3D models of channel belts"""
 
     def __init__(self, model_type, topo, strat, facies, facies_code, dx, channels):
-        """initialize ChannelBelt3D object
+        """
+        Initialize ChannelBelt3D object.
 
-        :param model_type: type of model to be built; can be either 'fluvial' or 'submarine'
-        :param topo: set of topographic surfaces (3D numpy array)
-        :param strat: set of stratigraphic surfaces (3D numpy array)
-        :param facies: facies volume (3D numpy array)
-        :param facies_code: dictionary of facies codes, e.g. {0:'oxbow', 1:'point bar', 2:'levee'}
-        :param dx: gridcell size (m)
-        :param channels: list of channel objects that form 3D model"""
+        Parameters
+        ----------
+        model_type : str
+            Type of model to be built; can be either 'fluvial' or 'submarine'.
+        topo : numpy.ndarray
+            Set of topographic surfaces (3D numpy array).
+        strat : numpy.ndarray
+            Set of stratigraphic surfaces (3D numpy array).
+        facies : numpy.ndarray
+            Facies volume (3D numpy array).
+        facies_code : dict
+            Dictionary of facies codes, e.g. {0:'oxbow', 1:'point bar', 2:'levee'}.
+        dx : float
+            Gridcell size (m).
+        channels : list
+            List of channel objects that form 3D model.
+        """
 
         self.model_type = model_type
         self.topo = topo
@@ -73,13 +106,28 @@ class ChannelBelt3D:
         self.channels = channels
 
     def plot_xsection(self, xsec, colors, ve):
-        """method for plotting a cross section through a 3D model; also plots map of 
-        basal erosional surface and map of final geomorphic surface
+        """
+        Method for plotting a cross section through a 3D model; also plots map of 
+        basal erosional surface and map of final geomorphic surface.
 
-        :param xsec: location of cross section along the x-axis (in pixel/ voxel coordinates) 
-        :param colors: list of RGB values that define the colors for different facies
-        :param ve: vertical exaggeration
-        :return: handles to the three figures"""
+        Parameters
+        ----------
+        xsec : int
+            Location of cross section along the x-axis (in pixel/voxel coordinates).
+        colors : list of tuple
+            List of RGB values that define the colors for different facies.
+        ve : float
+            Vertical exaggeration.
+
+        Returns
+        -------
+        fig1 : matplotlib.figure.Figure
+            Figure handle for the cross section plot.
+        fig2 : matplotlib.figure.Figure
+            Figure handle for the final geomorphic surface plot.
+        fig3 : matplotlib.figure.Figure
+            Figure handle for the basal erosional surface plot.
+        """
 
         strat = self.strat
         dx = self.dx
@@ -125,37 +173,67 @@ class ChannelBelt:
     """class for ChannelBelt objects"""
 
     def __init__(self, channels, cutoffs, cl_times, cutoff_times):
-        """initialize ChannelBelt object
+        """
+        Initialize ChannelBelt object.
 
-        :param channels: list of Channel objects
-        :param cutoffs: list of Cutoff objects
-        :param cl_times: list of ages of Channel objects (in years)
-        :param cutoff_times: list of ages of Cutoff objects"""
+        Parameters
+        ----------
+        channels : list of Channel
+            List of Channel objects.
+        cutoffs : list of Cutoff
+            List of Cutoff objects.
+        cl_times : list of float
+            List of ages of Channel objects (in years).
+        cutoff_times : list of float
+            List of ages of Cutoff objects.
+        """
 
         self.channels = channels
         self.cutoffs = cutoffs
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self, nit, saved_ts, deltas, pad, crdist, depths, Cfs, kl, kv, dt, dens, t1, t2, t3, aggr_factor):
-        """method for computing migration rates along channel centerlines and moving the centerlines accordingly
+    def migrate(self, nit, saved_ts, deltas, pad, crdist, depths, Cfs, kl, kv, dt, dens, autoaggradation=True, Scr=0.001, t1=None, t2=None, t3=None, aggr_factor=None):
+        """
+        Compute migration rates along channel centerlines and move the centerlines accordingly.
 
-        :param nit: number of iterations
-        :param saved_ts: which time steps will be saved; e.g., if saved_ts = 10, every tenth time step will be saved
-        :param deltas: distance between nodes on centerline
-        :param pad: padding (number of nodepoints along centerline)
-        :param crdist: threshold distance at which cutoffs occur
-        :param depths: array of channel depths (can very across iterations)
-        :param Cf: array of dimensionless Chezy friction factors (can vary across iterations)
-        :param kl: migration rate constant (m/s)
-        :param kv: vertical slope-dependent erosion rate constant (m/s)
-        :param dt: time step (s)
-        :param dens: density of fluid (kg/m3)
-        :param t1: time step when incision starts
-        :param t2: time step when lateral migration starts
-        :param t3: time step when aggradation starts
-        :param aggr_factor: aggradation factor
-        :param D: channel depth (m)"""
+        Parameters
+        ----------
+        nit : int
+            Number of iterations.
+        saved_ts : int
+            Which time steps will be saved; e.g., if saved_ts = 10, every tenth time step will be saved.
+        deltas : float
+            Distance between nodes on centerline.
+        pad : int
+            Padding (number of nodepoints along centerline).
+        crdist : float
+            Threshold distance at which cutoffs occur.
+        depths : array_like
+            Array of channel depths (can vary across iterations).
+        Cfs : array_like
+            Array of dimensionless Chezy friction factors (can vary across iterations).
+        kl : float
+            Migration rate constant (m/s).
+        kv : float
+            Vertical slope-dependent erosion rate constant (m/s).
+        dt : float
+            Time step (s).
+        dens : float
+            Density of fluid (kg/m^3).
+        autoaggradation : bool, optional
+            If True, autoaggradation is applied. Default is True.
+        Scr : float, optional
+            Critical slope for autoaggradation. Default is 0.001.
+        t1 : int, optional
+            Time step when incision starts. Default is None.
+        t2 : int, optional
+            Time step when lateral migration starts. Default is None.
+        t3 : int, optional
+            Time step when aggradation starts. Default is None.
+        aggr_factor : float, optional
+            Aggradation factor. Default is None.
+        """
 
         channel = self.channels[-1] # first channel is the same as last channel of input
         x = channel.x; y = channel.y; z = channel.z
@@ -174,53 +252,70 @@ class ChannelBelt:
         pad1 = int(pad/10.0)
         if pad1<5:
             pad1 = 5
-        omega = -1.0 # constant in migration rate calculation (Howard and Knutson, 1984)
-        gamma = 2.5 # from Ikeda et al., 1981 and Howard and Knutson, 1984
         for itn in trange(nit): # main loop
             D = depths[itn]
             Cf = Cfs[itn]
-            x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
-            # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma)
+            x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1)
+            # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
-            slope = np.gradient(z)/ds
-            # for itn<=t1, z is unchanged; for itn>t1:
-            if (itn>t1) & (itn<=t2): # incision
-                if np.min(np.abs(slope))!=0: # if slope is not zero
-                    z = z + kv*dens*9.81*D*slope*dt
-                else:
-                    z = z - kv*dens*9.81*D*dt*0.05 # if slope is zero
-            if (itn>t2) & (itn<=t3): # lateral migration
-                if np.min(np.abs(slope))!=0: # if slope is not zero
-                    # use the median slope to counterbalance incision:
-                    z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
-                else:
-                    z = z # no change in z
-            if (itn>t3): # aggradation
-                if np.min(np.abs(slope))!=0: # if slope is not zero
-                    # 'aggr_factor' should be larger than 1 so that this leads to overall aggradation:
-                    z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt 
-                else:
-                    z = z + aggr_factor*dt
+            z = savgol_filter(z, 21, 2) # filter z-values - needed for autoaggradation
+            slope = np.gradient(z)/ds # positive number
+            if autoaggradation:
+                if np.max(slope) > 0.001:
+                    R = 1.65; C = 0.1 # parameters for autoaggradation
+                    z = z + kv*dens*9.81*R*C*D*(Scr-slope)*dt # autoaggradation
+            else:
+                # for itn<=t1, z is unchanged; for itn>t1:
+                if (itn>t1) & (itn<=t2): # incision
+                    if np.min(np.abs(slope))!=0: # if slope is not zero
+                        z = z + kv*dens*9.81*D*slope*dt
+                    else:
+                        z = z - kv*dens*9.81*D*dt*0.05 # if slope is zero
+                if (itn>t2) & (itn<=t3): # lateral migration
+                    if np.min(np.abs(slope))!=0: # if slope is not zero
+                        # use the median slope to counterbalance incision:
+                        z = z + kv*dens*9.81*D*slope*dt - kv*dens*9.81*D*np.median(slope)*dt
+                    else:
+                        z = z # no change in z
+                if (itn>t3): # aggradation
+                    if np.min(np.abs(slope))!=0: # if slope is not zero
+                        # 'aggr_factor' should be larger than 1 so that this leads to overall aggradation:
+                        z = z + kv*dens*9.81*D*slope*dt - aggr_factor*kv*dens*9.81*D*np.mean(slope)*dt
+                    else:
+                        z = z + aggr_factor*dt
             if len(xc)>0: # save cutoff data
                 self.cutoff_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 cutoff = Cutoff(xc,yc,zc,W,D) # create cutoff object
                 self.cutoffs.append(cutoff)
             # saving centerlines (with the exception of first channel):
-            if (np.mod(itn, saved_ts) == 0) & (itn > 0):
+            if (np.mod(itn, saved_ts) == 0) and (itn > 0):
                 self.cl_times.append(last_cl_time+(itn+1)*dt/(365*24*60*60.0))
                 channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
 
     def plot(self, plot_type, pb_age, ob_age, end_time, n_channels):
-        """method  for plotting ChannelBelt object
+        """
+        Method for plotting ChannelBelt object.
 
-        :param plot_type: can be either 'strat' (for stratigraphic plot), 'morph' (for morphologic plot), or 'age' (for age plot)
-        :param pb_age: age of point bars (in years) at which they get covered by vegetation
-        :param ob_age: age of oxbow lakes (in years) at which they get covered by vegetation
-        :param end_time: age of last channel to be plotted (in years)
-        :param n_channels: total number of channels (used in 'age' plots; can be larger than number of channels being plotted)
-        :return: handle to figure"""
+        Parameters
+        ----------
+        plot_type : str
+            Can be either 'strat' (for stratigraphic plot), 'morph' (for morphologic plot), or 'age' (for age plot).
+        pb_age : int
+            Age of point bars (in years) at which they get covered by vegetation.
+        ob_age : int
+            Age of oxbow lakes (in years) at which they get covered by vegetation.
+        end_time : int
+            Age of last channel to be plotted (in years).
+        n_channels : int
+            Total number of channels (used in 'age' plots; can be larger than number of channels being plotted).
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            Handle to the figure.
+        """
 
         cot = np.array(self.cutoff_times)
         sclt = np.array(self.cl_times)
@@ -266,6 +361,7 @@ class ChannelBelt:
                 if plot_type == 'strat':
                     order += 1
                     plt.fill(xm, ym, 'xkcd:light tan', edgecolor='k', linewidth=0.25, zorder=order)
+                    # plt.fill(xm, ym, 'xkcd:light tan', edgecolor='none', linewidth=0.25, zorder=order)
                 if plot_type == 'age':
                     order += 1
                     plt.fill(xm,ym,facecolor=age_cmap(i/float(n_channels-1)),edgecolor='k',linewidth=0.1,zorder=order)
@@ -280,6 +376,7 @@ class ChannelBelt:
                     if plot_type == 'strat':
                         order = order+1
                         plt.fill(xm, ym, 'xkcd:ocean blue', edgecolor='k', linewidth=0.25, zorder=order)
+                        # plt.fill(xm, ym, 'xkcd:ocean blue', edgecolor='none', linewidth=0.25, zorder=order)
                     if plot_type == 'age':
                         order += 1
                         plt.fill(xm, ym, 'xkcd:sea blue', edgecolor='k', linewidth=0.1, zorder=order)
@@ -291,26 +388,42 @@ class ChannelBelt:
         if plot_type == 'age':
             plt.fill(xm, ym, color='xkcd:sea blue', zorder=order, edgecolor='k', linewidth=0.1)
         else:
-            plt.fill(xm, ym, color=(16/255.0,73/255.0,90/255.0), zorder=order) #,edgecolor='k')
+            plt.fill(xm, ym, color=(16/255.0,73/255.0,90/255.0), edgecolor='none', zorder=order) #,edgecolor='k')
         plt.axis('equal')
-        plt.xlim(xmin,xmax)
-        plt.ylim(ymin,ymax)
+        # plt.xlim(xmin,xmax)
+        # plt.ylim(ymin,ymax)
+        plt.xticks([])
+        plt.yticks([])
+        plt.tight_layout()
         return fig
 
     def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age, ob_age, end_time, n_channels):
-        """method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time
-        movie has to be assembled from the PNG file after this method is applied
+        """
+        Method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time.
+        The movie has to be assembled from the PNG files after this method is applied.
 
-        :param xmin: value of x coodinate on the left side of frame
-        :param xmax: value of x coordinate on right side of frame
-        :param plot_type: plot type; can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot)
-        :param filename: first few characters of the output filenames
-        :param dirname: name of directory where output files should be written
-        :param pb_age: age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
-        :param ob_age: age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type')
-        :param scale: scaling factor (e.g., 2) that determines how many times larger you want the frame to be, compared to the default scaling of the figure
-        :param end_time: time at which simulation should be stopped
-        :param n_channels: total number of channels + cutoffs for which simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'"""
+        Parameters
+        ----------
+        xmin : float
+            Value of x coordinate on the left side of the frame.
+        xmax : float
+            Value of x coordinate on the right side of the frame.
+        plot_type : str
+            Plot type; can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot).
+        filename : str
+            First few characters of the output filenames.
+        dirname : str
+            Name of the directory where output files should be written.
+        pb_age : int
+            Age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type').
+        ob_age : int
+            Age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type').
+        end_time : float or list of float
+            Time at which the simulation should be stopped.
+        n_channels : int
+            Total number of channels + cutoffs for which the simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'.
+
+        """
 
         sclt = np.array(self.cl_times)
         if type(end_time) != list:
@@ -337,29 +450,61 @@ class ChannelBelt:
             fig.savefig(fname, bbox_inches='tight')
             plt.close()
 
-def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, starttime, endtime, diff_scale, v_fine, v_coarse, xmin, xmax, ymin, ymax):
-    """function for building 3D model from set of centerlines (that are part of a ChannelBelt object)
+def build_3d_model(chb, model_type, h_mud, h, w, dx, delta_s, dt, starttime, endtime, diff_scale, v_fine, v_coarse, xmin=None, xmax=None, ymin=None, ymax=None, bth=None, dcr=None):
+    """
+    Build 3D model from set of centerlines (that are part of a ChannelBelt object).
 
-    :param model_type: model type ('fluvial' or 'submarine')
-    :param h_mud: maximum thickness of overbank deposit
-    :param h: channel depth
-    :param w: channel width
-    :param bth: thickness of channel sand (only used in submarine models)
-    :param dcr: critical channel depth where sand thickness goes to zero (only used in submarine models)
-    :param dx: cell size in x and y directions
-    :param delta_s: sampling distance alogn centerlines
-    :param starttime: age of centerline that will be used as the first centerline in the model
-    :param endtime: age of centerline that will be used as the last centerline in the model
-    :param xmin: minimum x coordinate that defines the model domain; if xmin is set to zero, 
-    a plot of the centerlines is generated and the model domain has to be defined by clicking its upper left and lower right corners
-    :param xmax: maximum x coordinate that defines the model domain
-    :param ymin: minimum y coordinate that defines the model domain
-    :param ymax: maximum y coordinate that defines the model domain
-    :param diff_scale: diffusion length scale (for overbank deposition)
-    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
-    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
-    :return chb_3d: a ChannelBelt3D object
-    :return xmin, xmax, ymin, ymax: x and y coordinates that define the model domain (so that they can be reused later)"""
+    Parameters
+    ----------
+    model_type : str
+        Model type ('fluvial' or 'submarine').
+    h_mud : float
+        Maximum thickness of overbank deposit.
+    h : float
+        Channel depth.
+    w : float
+        Channel width.
+    dx : float
+        Cell size in x and y directions.
+    delta_s : float
+        Sampling distance along centerlines.
+    starttime : float
+        Age of centerline that will be used as the first centerline in the model.
+    endtime : float
+        Age of centerline that will be used as the last centerline in the model.
+    xmin : float, optional
+        Minimum x coordinate that defines the model domain; if xmin is set to zero, 
+        a plot of the centerlines is generated and the model domain has to be defined by clicking its upper left and lower right corners.
+    xmax : float, optional
+        Maximum x coordinate that defines the model domain.
+    ymin : float, optional
+        Minimum y coordinate that defines the model domain.
+    ymax : float, optional
+        Maximum y coordinate that defines the model domain.
+    diff_scale : float
+        Diffusion length scale (for overbank deposition).
+    v_fine : float
+        Deposition rate of fine sediment, in m/year (for overbank deposition).
+    v_coarse : float
+        Deposition rate of coarse sediment, in m/year (for overbank deposition).
+    bth : float, optional
+        Thickness of channel sand (only used in submarine models).
+    dcr : float, optional
+        Critical channel depth where sand thickness goes to zero (only used in submarine models).
+
+    Returns
+    -------
+    chb_3d : ChannelBelt3D
+        A ChannelBelt3D object.
+    xmin : float
+        Minimum x coordinate that defines the model domain.
+    xmax : float
+        Maximum x coordinate that defines the model domain.
+    ymin : float
+        Minimum y coordinate that defines the model domain.
+    ymax : float
+        Maximum y coordinate that defines the model domain.
+    """
 
     sclt = np.array(chb.cl_times)
     ind1 = np.where(sclt >= starttime)[0][0] 
@@ -367,24 +512,28 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
     sclt = sclt[ind1:ind2+1]
     channels = chb.channels[ind1:ind2+1]
     cot = np.array(chb.cutoff_times)
-    if (len(cot)>0) & (len(np.where(cot >= starttime)[0])>0) & (len(np.where(cot <= endtime)[0])>0):
+    if (len(cot)>0) and (len(np.where(cot >= starttime)[0])>0) and (len(np.where(cot <= endtime)[0])>0):
         cfind1 = np.where(cot >= starttime)[0][0] 
         cfind2 = np.where(cot <= endtime)[0][-1]
         cot = cot[cfind1:cfind2+1]
-        cutoffs = chb.cutoffs[cfind1:cfind2+1]
     else:
         cot = []
-        cutoffs = []
     n_steps = len(sclt) # number of events
-    if xmin == 0: # plot centerlines and define model domain
-        plt.figure(figsize=(15,4))
-        maxX, minY, maxY = 0, 0, 0
-        for i in range(n_steps): # plot centerlines
-            plt.plot(channels[i].x, channels[i].y, 'k')
-            maxX = max(maxX, np.max(channels[i].x))
-            maxY = max(maxY, np.max(channels[i].y))
-            minY = min(minY, np.min(channels[i].y))
-        plt.axis([0, maxX, minY-10*w, maxY+10*w])
+    if xmin is None: # plot centerlines and define model domain
+        plt.figure(figsize=(15,10))
+        for i in range(len(channels)): # plot centerlines
+            plt.plot(chb.channels[i].x, chb.channels[i].y, 'k')
+            if i == 0:
+                maxX = np.max(channels[i].x)
+                minX = np.min(channels[i].x)
+                maxY = np.max(channels[i].y)
+                minY = np.min(channels[i].y)
+            else:
+                maxX = max(maxX, np.max(channels[i].x))
+                minX = min(minX, np.min(channels[i].x))
+                maxY = max(maxY, np.max(channels[i].y))
+                minY = min(minY, np.min(channels[i].y))
+        plt.axis([minX, maxX, minY-10*w, maxY+10*w])
         plt.gca().set_aspect('equal', adjustable='box')
         plt.tight_layout()
         pts = np.zeros((2,2))
@@ -403,7 +552,6 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
     dists = np.zeros((iheight, iwidth, n_steps))
     zmaps = np.zeros((iheight, iwidth, n_steps))
     facies = np.zeros((3*n_steps, 1))
-    cutoff_levels = np.nan * np.zeros((n_steps, 1))
     # create initial topography:
     x1 = np.linspace(0, iwidth-1, iwidth)
     y1 = np.linspace(0, iheight-1, iheight)
@@ -427,17 +575,16 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
                 cutoff_ind.append(j)
         # create distance map:
         cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x1, y1, z1 = dist_map(x, y, z, xmin, xmax, ymin, ymax, dx, delta_s)
-        if i == 0:
-            cl_dist_prev = cl_dist
         # erosion:
-        surf = np.minimum(surf,erosion_surface(h,w/dx,cl_dist,z_map))
+        surf = np.minimum(surf, erosion_surface(h,w/dx,cl_dist,z_map))
         topo[:,:,3*i] = surf # erosional surface
         dists[:,:,i] = cl_dist # distance map
         zmaps[:,:,i] = z_map # map of closest channel elevation
         facies[3*i] = np.NaN # array for facies code
 
         if model_type == 'fluvial':
-            pb = point_bar_surface(cl_dist,z_map,h,w/dx)
+            z_map = gaussian_filter(z_map, sigma=50) # smooth z_map to avoid artefacts in levees
+            pb = point_bar_surface(cl_dist, z_map, h, w/dx)
             th = np.maximum(surf,pb)-surf
             th[cl_dist > 1.0 * w/dx] = 0 # eliminate sand outside of channel
             th[th<0] = 0 # eliminate negative thickness values
@@ -445,13 +592,22 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
             topo[:,:,3*i+1] = surf # top of sand
             facies[3*i+1] = 1 # facies code for point bar sand
             E_max = z_map + h_mud[i]
+            if i == n_steps-1:
+                surf_diff = E_max-surf
+                surf_diff[surf_diff < 0] = 0
+                plt.figure()
+                plt.imshow(surf_diff)
             levee = fluvial_levee(cl_dist, surf, E_max, w/dx, diff_scale, v_fine, v_coarse, dt)
+            if i == n_steps-1:
+                plt.figure()
+                plt.imshow(levee)
             surf = surf + levee # mud/levee deposition 
             topo[:,:,3*i+2] = surf # top of levee
             facies[3*i+2] = 2 # facies code for overbank
             channels3D.append(Channel(x1-xmin, y1-ymin, z1, w, h))
 
         if model_type == 'submarine':
+            z_map = gaussian_filter(z_map, sigma=50) # smooth z_map to avoid artefacts in levees
             th, relief = sand_surface(surf, bth, dcr, z_map, h) # sandy channel deposit
             th[th < 0] = 0 # eliminate negative thickness values
             ws = w * (dcr/h)**0.5 # channel width at the top of the channel deposit
@@ -460,15 +616,14 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
             topo[:,:,3*i+1] = surf # top of sand
             facies[3*i+1] = 1 # facies code for channel sand
             # need to blur z-map so that levees don't have artefacts:
-            blurred = filters.gaussian(z_map, sigma=(50, 50), truncate=3.5, multichannel=False)
-            E_max = blurred + h_mud[i]
+            # blurred = filters.gaussian(z_map, sigma=(50, 50), truncate=3.5, multichannel=False)
+            E_max = z_map + h_mud[i]
             levee = submarine_levee(h_mud[i], cl_dist, surf, E_max, w/dx, diff_scale, v_fine, v_coarse, dt)
             surf = surf + levee # mud/levee deposition
             topo[:,:,3*i+2] = surf # top of levee
             facies[3*i+2] = 2 # facies code for overbank 
             channels3D.append(Channel(x1-xmin, y1-ymin, z1, w, h))
 
-        cl_dist_prev = cl_dist.copy()
     topo = np.concatenate((np.reshape(topoinit,(iheight,iwidth,1)),topo),axis=2) # add initial topography to array
     strat = topostrat(topo) # create stratigraphic surfaces
     strat = np.delete(strat, np.arange(3*n_steps+1)[1::3], 2) # get rid of unnecessary stratigraphic surfaces (duplicates)
@@ -478,24 +633,43 @@ def build_3d_model(chb, model_type, h_mud, h, w, bth, dcr, dx, delta_s, dt, star
     if model_type == 'submarine':
         facies_code = {1:'channel sand', 2:'levee'}
     chb_3d = ChannelBelt3D(model_type, topo, strat, facies, facies_code, dx, channels3D)
-    # return chb_3d, xmin, xmax, ymin, ymax, dists, cutoff_dists_all, cutoff_levels, zmaps
     return chb_3d, xmin, xmax, ymin, ymax, dists, zmaps
 
 def resample_centerline(x,y,z,deltas):
-    '''resample centerline so that 'deltas' is roughly constant, using parametric 
-    spline representation of curve; note that there is *no* smoothing
+    """
+    Resample centerline so that 'deltas' is roughly constant, using parametric 
+    spline representation of curve; note that there is *no* smoothing.
 
-    :param x: x-coordinates of centerline
-    :param y: y-coordinates of centerline
-    :param z: z-coordinates of centerline
-    :param deltas: distance between points on centerline
-    :return x: x-coordinates of resampled centerline
-    :return y: y-coordinates of resampled centerline
-    :return z: z-coordinates of resampled centerline
-    :return dx: dx of resampled centerline
-    :return dy: dy of resampled centerline
-    :return dz: dz of resampled centerline
-    :return s: s-coordinates of resampled centerline'''
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of centerline.
+    y : array_like
+        y-coordinates of centerline.
+    z : array_like
+        z-coordinates of centerline.
+    deltas : float
+        Distance between points on centerline.
+
+    Returns
+    -------
+    x : ndarray
+        x-coordinates of resampled centerline.
+    y : ndarray
+        y-coordinates of resampled centerline.
+    z : ndarray
+        z-coordinates of resampled centerline.
+    dx : ndarray
+        dx of resampled centerline.
+    dy : ndarray
+        dy of resampled centerline.
+    dz : ndarray
+        dz of resampled centerline.
+    ds : ndarray
+        ds of resampled centerline.
+    s : ndarray
+        s-coordinates of resampled centerline.
+    """
 
     dx, dy, dz, ds, s = compute_derivatives(x,y,z) # compute derivatives
     tck, u = scipy.interpolate.splprep([x,y,z],s=0) 
@@ -505,32 +679,56 @@ def resample_centerline(x,y,z,deltas):
     dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
     return x,y,z,dx,dy,dz,ds,s
 
-def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
-    '''migrate centerline during one time step, using the migration computed as in Howard & Knutson (1984)
+def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
+    """
+    Migrate centerline during one time step, using the migration computed as in Howard & Knutson (1984).
 
-    :param x: x-coordinates of centerline
-    :param y: y-coordinates of centerline
-    :param z: z-coordinates of centerline
-    :param W: channel width
-    :param kl: migration rate (or erodibility) constant (m/s)
-    :param dt: duration of time step (s)
-    :param k: constant for calculating the exponent alpha (= 1.0)
-    :param Cf: dimensionless Chezy friction factor
-    :param D: channel depth
-    :param omega: constant in Howard & Knutson equation (= -1.0)
-    :param gamma: constant in Howard & Knutson equation (= 2.5)
-    :return x: new x-coordinates of centerline after migration
-    :return y: new y-coordinates of centerline after migration
-    '''
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of centerline.
+    y : array_like
+        y-coordinates of centerline.
+    z : array_like
+        z-coordinates of centerline.
+    W : float
+        Channel width.
+    kl : float
+        Migration rate (or erodibility) constant (m/s).
+    dt : float
+        Duration of time step (s).
+    k : float
+        Constant for calculating the exponent alpha (= 1.0).
+    Cf : float
+        Dimensionless Chezy friction factor.
+    D : float
+        Channel depth.
+    pad : int
+        Padding parameter for migration rate computation.
+    pad1 : int
+        Padding parameter for centerline adjustment.
+    omega : float
+        Constant in Howard & Knutson equation (= -1.0).
+    gamma : float
+        Constant in Howard & Knutson equation (= 2.5).
+
+    Returns
+    -------
+    x : array_like
+        New x-coordinates of centerline after migration.
+    y : array_like
+        New y-coordinates of centerline after migration.
+    """
 
     ns=len(x)
     curv = compute_curvature(x,y)
     dx, dy, dz, ds, s = compute_derivatives(x,y,z)
-    sinuosity = s[-1]/(x[-1]-x[0])
+    # sinuosity = s[-1]/(x[-1]-x[0])
+    sinuosity = s[-1]/(np.sqrt((x[-1]-x[0])**2 + (y[-1]-y[0])**2))
     curv = W*curv # dimensionless curvature
     R0 = kl*curv # simple linear relationship between curvature and nominal migration rate
     alpha = k*2*Cf/D # exponent for convolution function G
-    R1 = compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0)
+    R1 = compute_migration_rate(pad,ns,ds,alpha,R0)
     R1 = sinuosity**(-2/3.0)*R1
     # calculate new centerline coordinates:
     dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
@@ -540,7 +738,7 @@ def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
     y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
     return x,y
 
-def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
+def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
     ns=len(x)
     curv = compute_curvature(x,y)
     dx, dy, dz, ds, s = compute_derivatives(x,y,z)
@@ -548,7 +746,7 @@ def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
     curv = W*curv # dimensionless curvature
     R0 = kl*curv # simple linear relationship between curvature and nominal migration rate
     alpha = k*2*Cf/D # exponent for convolution function G
-    R1 = compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0)
+    R1 = compute_migration_rate(pad,ns,ds,alpha,R0)
     R1 = sinuosity**(-2/3.0)*R1
     pad = -1
     # calculate new centerline coordinates:
@@ -563,52 +761,104 @@ def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega,gamma):
     return x,y
 
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
-    """generate straight Channel object with some noise added that can serve
-    as input for initializing a ChannelBelt object
-    W - channel width
-    D - channel depth
-    Sl - channel gradient
-    deltas - distance between nodes on centerline
-    pad - padding (number of nodepoints along centerline)
-    n_bends - approximate number of bends to be simulated"""
+    """
+    Generate a straight Channel object with some noise added that can serve
+    as input for initializing a ChannelBelt object.
+
+    Parameters
+    ----------
+    W : float
+        Channel width.
+    D : float
+        Channel depth.
+    Sl : float
+        Channel gradient.
+    deltas : float
+        Distance between nodes on centerline.
+    pad : int
+        Padding (number of node points along centerline).
+    n_bends : int
+        Approximate number of bends to be simulated.
+
+    Returns
+    -------
+    Channel
+        A Channel object initialized with the generated coordinates and dimensions.
+    """
     noisy_len = n_bends*10*W/2.0 # length of noisy part of initial centerline
     pad1 = int(pad/10.0) # padding at upstream end can be shorter than padding on downstream end
     if pad1<5:
         pad1 = 5
     x = np.linspace(0, noisy_len+(pad+pad1)*deltas, int(noisy_len/deltas+pad+pad1)+1) # x coordinate
-    y = 10.0 * (2*np.random.random_sample(int(noisy_len/deltas)+1,)-1)
+    y = 2.0 * (2*np.random.random_sample(int(noisy_len/deltas)+1,)-1)
     y = np.hstack((np.zeros((pad1),),y,np.zeros((pad),))) # y coordinate
     deltaz = Sl * deltas*(len(x)-1)
     z = np.linspace(0,deltaz,len(x))[::-1] # z coordinate
     return Channel(x,y,z,W,D)
 
 @numba.jit(nopython=True) # use Numba to speed up the heaviest computation
-def compute_migration_rate(pad,ns,ds,alpha,omega,gamma,R0):
-    """compute migration rate as weighted sum of upstream curvatures
-    pad - padding (number of nodepoints along centerline)
-    ns - number of points in centerline
-    ds - distances between points in centerline
-    omega - constant in HK model
-    gamma - constant in HK model
-    R0 - nominal migration rate (dimensionless curvature * migration rate constant)"""
-    R1 = np.zeros(ns) # preallocate adjusted channel migration rate
-    pad1 = int(pad/10.0) # padding at upstream end can be shorter than padding on downstream end
-    if pad1<5:
+def compute_migration_rate(pad, ns, ds, alpha, R0, omega=-1.0, gamma=2.5):
+    """
+    Compute migration rate as weighted sum of upstream curvatures.
+
+    Parameters
+    ----------
+    pad : int
+        Padding (number of nodepoints along centerline).
+    ns : int
+        Number of points in centerline.
+    ds : ndarray
+        Distances between points in centerline.
+    alpha : float
+        Exponent for convolution function G.
+    R0 : ndarray
+        Nominal migration rate (dimensionless curvature * migration rate constant).
+    omega : float, optional
+        Constant in HK model, by default -1.0.
+    gamma : float, optional
+        Constant in HK model, by default 2.5.
+
+    Returns
+    -------
+    ndarray
+        Adjusted channel migration rate.
+    """
+    R1 = np.zeros(ns)  # preallocate adjusted channel migration rate
+    pad1 = int(pad / 10.0)  # padding at upstream end can be shorter than padding on downstream end
+    if pad1 < 5:
         pad1 = 5
-    for i in range(pad1,ns-pad):
-        si2 = np.hstack((np.array([0]),np.cumsum(ds[i-1::-1])))  # distance along centerline, backwards from current point 
-        G = np.exp(-alpha*si2) # convolution vector
-        R1[i] = omega*R0[i] + gamma*np.sum(R0[i::-1]*G)/np.sum(G) # main equation
+    for i in range(pad1, ns - pad):
+        si2 = np.hstack((np.array([0]), np.cumsum(ds[i - 1::-1])))  # distance along centerline, backwards from current point
+        G = np.exp(-alpha * si2)  # convolution vector
+        R1[i] = omega * R0[i] + gamma * np.sum(R0[i::-1] * G) / np.sum(G)  # main equation
     return R1
 
 def compute_derivatives(x,y,z):
-    """function for computing first derivatives of a curve (centerline)
-    x,y are cartesian coodinates of the curve
-    outputs:
-    dx - first derivative of x coordinate
-    dy - first derivative of y coordinate
-    ds - distances between consecutive points along the curve
-    s - cumulative distance along the curve"""
+    """
+    Compute first derivatives of a curve (centerline).
+
+    Parameters
+    ----------
+    x : array_like
+        Cartesian x-coordinates of the curve.
+    y : array_like
+        Cartesian y-coordinates of the curve.
+    z : array_like
+        Cartesian z-coordinates of the curve.
+
+    Returns
+    -------
+    dx : ndarray
+        First derivative of x coordinate.
+    dy : ndarray
+        First derivative of y coordinate.
+    dz : ndarray
+        First derivative of z coordinate.
+    ds : ndarray
+        Distances between consecutive points along the curve.
+    s : ndarray
+        Cumulative distance along the curve.
+    """
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)   
     dz = np.gradient(z)   
@@ -617,14 +867,26 @@ def compute_derivatives(x,y,z):
     return dx, dy, dz, ds, s
 
 def compute_curvature(x,y):
-    """function for computing first derivatives and curvature of a curve (centerline)
-    x,y are cartesian coodinates of the curve
-    outputs:
-    dx - first derivative of x coordinate
-    dy - first derivative of y coordinate
-    ds - distances between consecutive points along the curve
-    s - cumulative distance along the curve
-    curvature - curvature of the curve (in 1/units of x and y)"""
+    """
+    Compute the first derivatives and curvature of a curve (centerline).
+
+    Parameters
+    ----------
+    x : array_like
+        Cartesian coordinates of the curve along the x-axis.
+    y : array_like
+        Cartesian coordinates of the curve along the y-axis.
+
+    Returns
+    -------
+    curvature : ndarray
+        Curvature of the curve (in 1/units of x and y).
+
+    Notes
+    -----
+    The function calculates the first and second derivatives of the input coordinates
+    and uses them to compute the curvature of the curve.
+    """
     dx = np.gradient(x) # first derivatives
     dy = np.gradient(y)      
     ddx = np.gradient(dx) # second derivatives 
@@ -633,10 +895,23 @@ def compute_curvature(x,y):
     return curvature
 
 def make_colormap(seq):
-    """Return a LinearSegmentedColormap
-    seq: a sequence of floats and RGB-tuples. The floats should be increasing
-    and in the interval (0,1).
-    [from: https://stackoverflow.com/questions/16834861/create-own-colormap-using-matplotlib-and-plot-color-scale]
+    """
+    Return a LinearSegmentedColormap.
+
+    Parameters
+    ----------
+    seq : list of tuple
+        A sequence of floats and RGB-tuples. The floats should be increasing
+        and in the interval (0, 1).
+
+    Returns
+    -------
+    LinearSegmentedColormap
+        A colormap object that can be used in matplotlib plotting.
+
+    References
+    ----------
+    .. [1] https://stackoverflow.com/questions/16834861/create-own-colormap-using-matplotlib-and-plot-color-scale
     """
     seq = [(None,) * 3, 0.0] + list(seq) + [1.0, (None,) * 3]
     cdict = {'red': [], 'green': [], 'blue': []}
@@ -650,8 +925,29 @@ def make_colormap(seq):
     return mcolors.LinearSegmentedColormap('CustomMap', cdict)
 
 def kth_diag_indices(a,k):
-    """function for finding diagonal indices with k offset
-    [from https://stackoverflow.com/questions/10925671/numpy-k-th-diagonal-indices]"""
+    """
+    Find the indices of the k-th diagonal of a 2D array.
+
+    Parameters
+    ----------
+    a : array_like
+        Input array. Must be 2-dimensional.
+    k : int
+        Diagonal offset. If k=0, the main diagonal is returned. 
+        If k>0, the k-th upper diagonal is returned. 
+        If k<0, the k-th lower diagonal is returned.
+
+    Returns
+    -------
+    tuple of ndarray
+        A tuple of arrays (rows, cols) containing the row and column indices 
+        of the k-th diagonal.
+
+    Notes
+    -----
+    This function is adapted from a solution on Stack Overflow:
+    https://stackoverflow.com/questions/10925671/numpy-k-th-diagonal-indices
+    """
     rows, cols = np.diag_indices_from(a)
     if k<0:
         return rows[:k], cols[-k:]
@@ -661,11 +957,28 @@ def kth_diag_indices(a,k):
         return rows, cols
     
 def find_cutoffs(x,y,crdist,deltas):
-    """function for identifying locations of cutoffs along a centerline
-    and the indices of the segments that will become part of the oxbows
-    x,y - coordinates of centerline
-    crdist - critical cutoff distance
-    deltas - distance between neighboring points along the centerline"""
+    """
+    Identify locations of cutoffs along a centerline and the indices of the segments 
+    that will become part of the oxbows.
+
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of the centerline.
+    y : array_like
+        y-coordinates of the centerline.
+    crdist : float
+        Critical cutoff distance.
+    deltas : float
+        Distance between neighboring points along the centerline.
+
+    Returns
+    -------
+    ind1 : ndarray
+        Indices of the first set of cutoff points.
+    ind2 : ndarray
+        Indices of the second set of cutoff points.
+    """
     diag_blank_width = int((crdist+20*deltas)/deltas)
     # distance matrix for centerline points:
     dist = distance.cdist(np.array([x,y]).T,np.array([x,y]).T)
@@ -680,13 +993,39 @@ def find_cutoffs(x,y,crdist,deltas):
     return ind1, ind2 # return indices of cutoff points and cutoff coordinates
 
 def cut_off_cutoffs(x,y,z,s,crdist,deltas):
-    """function for executing cutoffs - removing oxbows from centerline and storing cutoff coordinates
-    x,y - coordinates of centerline
-    crdist - critical cutoff distance
-    deltas - distance between neighboring points along the centerline
-    outputs:
-    x,y,z - updated coordinates of centerline
-    xc, yc, zc - lists with coordinates of cutoff segments"""
+    """
+    Execute cutoffs by removing oxbows from the centerline and storing cutoff coordinates.
+
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of the centerline.
+    y : array_like
+        y-coordinates of the centerline.
+    z : array_like
+        z-coordinates of the centerline.
+    s : array_like
+        Additional parameter (not used in the function).
+    crdist : float
+        Critical cutoff distance.
+    deltas : array_like
+        Distance between neighboring points along the centerline.
+
+    Returns
+    -------
+    x : array_like
+        Updated x-coordinates of the centerline after cutoffs.
+    y : array_like
+        Updated y-coordinates of the centerline after cutoffs.
+    z : array_like
+        Updated z-coordinates of the centerline after cutoffs.
+    xc : list of array_like
+        Lists of x-coordinates of cutoff segments.
+    yc : list of array_like
+        Lists of y-coordinates of cutoff segments.
+    zc : list of array_like
+        Lists of z-coordinates of cutoff segments.
+    """
     xc = []
     yc = []
     zc = []
@@ -702,11 +1041,25 @@ def cut_off_cutoffs(x,y,z,s,crdist,deltas):
     return x,y,z,xc,yc,zc
 
 def get_channel_banks(x,y,W):
-    """function for finding coordinates of channel banks, given a centerline and a channel width
-    x,y - coordinates of centerline
-    W - channel width
-    outputs:
-    xm, ym - coordinates of channel banks (both left and right banks)"""
+    """
+    Find coordinates of channel banks, given a centerline and a channel width.
+
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of the centerline.
+    y : array_like
+        y-coordinates of the centerline.
+    W : float
+        Channel width.
+
+    Returns
+    -------
+    xm : ndarray
+        x-coordinates of the channel banks (both left and right banks).
+    ym : ndarray
+        y-coordinates of the channel banks (both left and right banks).
+    """
     x1 = x.copy()
     y1 = y.copy()
     x2 = x.copy()
@@ -726,29 +1079,58 @@ def get_channel_banks(x,y,W):
     ym = np.hstack((y1,y2[::-1]))
     return xm, ym
 
-def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
-    """function for centerline rasterization and distance map calculation
-    :param x: x coordinates of centerline
-    :param y: y coordinates of centerline
-    :param z: z coordinates of centerline
-    :param xmin: minimum x coordinate that defines the area of interest
-    :param xmax: maximum x coordinate that defines the area of interest
-    :param ymin: minimum y coordinate that defines the area of interest
-    :param ymax: maximum y coordinate that defines the area of interest
-    :param dx: gridcell size (m)
-    :param delta_s: distance between points along centerline (m)
-    :return cl_dist: distance map (distance from centerline)
-    :return x_pix: x pixel coordinates of the centerline
-    :return y_pix: y pixel coordinates of the centerline
-    :return z_pix: z pizel coordinates of the centerline
-    :return s_pix: along-channel distance in pixels
-    :return z_map: map of reference channel thalweg elevation (elevation of closest point along centerline)
-    :return x: x centerline coordinates clipped to the 3D model domain
-    :return y: y centerline coordinates clipped to the 3D model domain
-    :return z: z centerline coordinates clipped to the 3D model domain"""
+def dist_map(x, y, z, xmin, xmax, ymin, ymax, dx, delta_s):
+    """
+    Function for centerline rasterization and distance map calculation.
+
+    Parameters
+    ----------
+    x : array_like
+        x coordinates of centerline.
+    y : array_like
+        y coordinates of centerline.
+    z : array_like
+        z coordinates of centerline.
+    xmin : float
+        Minimum x coordinate that defines the area of interest.
+    xmax : float
+        Maximum x coordinate that defines the area of interest.
+    ymin : float
+        Minimum y coordinate that defines the area of interest.
+    ymax : float
+        Maximum y coordinate that defines the area of interest.
+    dx : float
+        Grid cell size (m).
+    delta_s : float
+        Distance between points along centerline (m).
+
+    Returns
+    -------
+    cl_dist : ndarray
+        Distance map (distance from centerline).
+    x_pix : ndarray
+        x pixel coordinates of the centerline.
+    y_pix : ndarray
+        y pixel coordinates of the centerline.
+    z_pix : ndarray
+        z pixel coordinates of the centerline.
+    s_pix : ndarray
+        Along-channel distance in pixels.
+    z_map : ndarray
+        Map of reference channel thalweg elevation (elevation of closest point along centerline).
+    x : ndarray
+        x centerline coordinates clipped to the 3D model domain.
+    y : ndarray
+        y centerline coordinates clipped to the 3D model domain.
+    z : ndarray
+        z centerline coordinates clipped to the 3D model domain.
+    """
     y = y[(x>xmin) & (x<xmax)]
     z = z[(x>xmin) & (x<xmax)]
-    x = x[(x>xmin) & (x<xmax)] 
+    x = x[(x>xmin) & (x<xmax)]
+    x = x[(y>ymin) & (y<ymax)]
+    z = z[(y>ymin) & (y<ymax)]
+    y = y[(y>ymin) & (y<ymax)]
     dummy,dy,dz,ds,s = compute_derivatives(x,y,z)
     if len(np.where(ds>2*delta_s)[0])>0:
         inds = np.where(ds>2*delta_s)[0]
@@ -784,23 +1166,23 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     cl = pix[:,:,0]
     cl[cl==255] = 1 # set background to 1 (centerline is 0)
     y_pix,x_pix = np.where(cl==0) 
-    x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
+    x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img)
     # This next block of code is kind of a hack. Looking for, and eliminating, 'bad' pixels.
     img = np.array(img)
     img = img[:,:,0]
     img[img==255] = 1 
     img1 = morphology.binary_dilation(img, morphology.square(2)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
-        x_pix, y_pix = eliminate_bad_pixels(img,img1)
-        x_pix,y_pix = order_cl_pixels(x_pix,y_pix) 
-    img1 = morphology.binary_dilation(img, np.array([[1,0,1],[1,1,1]],dtype=np.uint8)).astype(np.uint8)
+        x_pix, y_pix = eliminate_bad_pixels(img, img1)
+        x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img) 
+    img1 = morphology.binary_dilation(img, np.array([[1,0,1], [1,1,1]], dtype=np.uint8)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
         x_pix, y_pix = eliminate_bad_pixels(img,img1)
-        x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
-    img1 = morphology.binary_dilation(img, np.array([[1,0,1],[0,1,0],[1,0,1]],dtype=np.uint8)).astype(np.uint8)
+        x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img)
+    img1 = morphology.binary_dilation(img, np.array([[1,0,1], [0,1,0], [1,0,1]], dtype=np.uint8)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
-        x_pix, y_pix = eliminate_bad_pixels(img,img1)
-        x_pix,y_pix = order_cl_pixels(x_pix,y_pix)
+        x_pix, y_pix = eliminate_bad_pixels(img, img1)
+        x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img)
     #redo the distance calculation (because x_pix and y_pix do not always contain all the points in cl):
     cl[cl==0] = 1
     cl[y_pix,x_pix] = 0
@@ -808,55 +1190,94 @@ def dist_map(x,y,z,xmin,xmax,ymin,ymax,dx,delta_s):
     dx,dy,dz,ds,s = compute_derivatives(x,y,z)
     dx_pix = np.diff(x_pix)
     dy_pix = np.diff(y_pix)
-    ds_pix = np.sqrt(dx_pix**2+dy_pix**2)
+    ds_pix = np.sqrt(dx_pix**2 + dy_pix**2)
     s_pix = np.hstack((0,np.cumsum(ds_pix)))
-    f = scipy.interpolate.interp1d(s,z)
+    f = scipy.interpolate.interp1d(s, z)
     snew = s_pix*s[-1]/s_pix[-1]
-    if snew[-1]>s[-1]:
-        snew[-1]=s[-1]
-    snew[snew<s[0]]=s[0]
+    if snew[-1] > s[-1]:
+        snew[-1] = s[-1]
+    snew[snew<s[0]] = s[0]
     z_pix = f(snew)
     # create z_map:
     z_map = np.zeros(np.shape(cl_dist)) 
-    z_map[y_pix,x_pix]=z_pix
-    xinds=inds[1,:,:]
-    yinds=inds[0,:,:]
-    for i in range(0,len(x_pix)):
+    z_map[y_pix, x_pix] = z_pix
+    xinds = inds[1,:,:]
+    yinds = inds[0,:,:]
+    for i in range(0, len(x_pix)):
         z_map[(xinds==x_pix[i]) & (yinds==y_pix[i])] = z_pix[i]
     return cl_dist, x_pix, y_pix, z_pix, s_pix, z_map, x, y, z
 
 def erosion_surface(h,w,cl_dist,z):
-    """function for creating a parabolic erosional surface
-    :param h: geomorphic channel depth (m)
-    :param w: geomorphic channel width (in pixels, as cl_dist is also given in pixels)
-    :param cl_dist: distance map (distance from centerline)
-    :param z: reference elevation (m)
-    :return surf: map of the erosional surface (m)
+    """
+    Function for creating a parabolic erosional surface.
+
+    Parameters
+    ----------
+    h : float
+        Geomorphic channel depth (m).
+    w : int
+        Geomorphic channel width (in pixels, as cl_dist is also given in pixels).
+    cl_dist : numpy.ndarray
+        Distance map (distance from centerline).
+    z : float
+        Reference elevation (m).
+
+    Returns
+    -------
+    surf : numpy.ndarray
+        Map of the erosional surface (m).
     """
     surf = z + (4*h/w**2)*(cl_dist+w*0.5)*(cl_dist-w*0.5)
     return surf
 
 def point_bar_surface(cl_dist,z,h,w):
-    """function for creating a Gaussian-based point bar surface
-    used in 3D fluvial model
-    :param cl_dist: distance map (distance from centerline)
-    :param z: reference elevation (m)
-    :param h: channel depth (m)
-    :param w: channel width, in pixels, as cl_dist is also given in pixels
-    :return pb: map of the Gaussian surface that can be used to from a point bar deposit (m)"""
+    """
+    Create a Gaussian-based point bar surface used in a 3D fluvial model.
+
+    Parameters
+    ----------
+    cl_dist : array-like
+        Distance map (distance from centerline) in pixels.
+    z : float
+        Reference elevation in meters.
+    h : float
+        Channel depth in meters.
+    w : float
+        Channel width in pixels.
+
+    Returns
+    -------
+    pb : array-like
+        Map of the Gaussian surface that can be used to form a point bar deposit in meters.
+    """
     pb = z-h*np.exp(-(cl_dist**2)/(2*(w*0.33)**2))
     return pb
 
 def sand_surface(surf, bth, dcr, z_map, h):
-    """function for creating the top horizontal surface sand-rich deposit in the bottom of the channel
-    used in 3D submarine channel models
-    :param surf: current geomorphic surface
-    :param bth: thickness of sand deposit in axis of channel (m)
-    :param dcr: critical channel depth, above which there is no sand deposition (m)
-    :param z_map: map of reference channel thalweg elevation (elevation of closest point along centerline)
-    :param h: channel depth (m)
-    :return th: thickness map of sand deposit (m)
-    :return relief: map of channel relief (m)"""
+    """
+    Function for creating the top horizontal surface sand-rich deposit in the bottom of the channel
+    used in 3D submarine channel models.
+
+    Parameters
+    ----------
+    surf : ndarray
+        Current geomorphic surface.
+    bth : float
+        Thickness of sand deposit in axis of channel (m).
+    dcr : float
+        Critical channel depth, above which there is no sand deposition (m).
+    z_map : ndarray
+        Map of reference channel thalweg elevation (elevation of closest point along centerline).
+    h : float
+        Channel depth (m).
+
+    Returns
+    -------
+    th : ndarray
+        Thickness map of sand deposit (m).
+    relief : ndarray
+        Map of channel relief (m).
+    """
     relief = np.abs(surf - z_map + h)
     relief = np.abs(relief - np.amin(relief))
     th = bth * (1 - relief/dcr) # bed thickness inversely related to relief
@@ -864,37 +1285,69 @@ def sand_surface(surf, bth, dcr, z_map, h):
     return th, relief
 
 def fluvial_levee(cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
-    """function for creating a levee layer in a fluvial 3D model
-    based on the diffusion-based overbank deposition model of Howard, 1992
-    :param h_mud: maximum thickness of overbank deposit (specific to time step)
-    :param cl_dist: distance map (distance from centerline)
-    :param topo: current topographic surface
-    :param E_max: maximum thickness of overbank deposit (specific to location)
-    :param w: channel width
-    :param diff_scale: diffusion length scale
-    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
-    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
-    :param dt: time step (in seconds)
-    :return levee: thickness of levee layer (same size as 'topo')"""
+    """
+    Function for creating a levee layer in a fluvial 3D model based on the diffusion-based overbank deposition model of Howard, 1992.
+
+    Parameters
+    ----------
+    cl_dist : ndarray
+        Distance map (distance from centerline).
+    topo : ndarray
+        Current topographic surface.
+    E_max : float
+        Maximum thickness of overbank deposit (specific to location).
+    w : float
+        Channel width.
+    diff_scale : float
+        Diffusion length scale.
+    v_fine : float
+        Deposition rate of fine sediment, in m/year (for overbank deposition).
+    v_coarse : float
+        Deposition rate of coarse sediment, in m/year (for overbank deposition).
+    dt : float
+        Time step (in seconds).
+
+    Returns
+    -------
+    levee : ndarray
+        Thickness of levee layer (same size as 'topo').
+    """
     dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
-    dep_rate[cl_dist < 0.5*w] = 0  # get rid of the mud in the active channel
+    dep_rate[cl_dist < 0.6*w] = 0  # get rid of the mud in the active channel
     dep_rate[dep_rate < 0] = 0
     levee = dep_rate * (dt/(365*24*60*60))
     return levee
 
 def submarine_levee(h_mud, cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse, dt):
-    """function for creating a levee layer in a submarine 3D model
-    based on the diffusion-based overbank deposition model of Howard, 1992
-    :param h_mud: maximum thickness of overbank deposit (specific to time step)
-    :param cl_dist: distance map (distance from centerline)
-    :param topo: current topographic surface
-    :param E_max: maximum thickness of overbank deposit (specific to location)
-    :param w: channel width
-    :param diff_scale: diffusion length scale
-    :param v_fine: deposition rate of fine sediment, in m/year (for overbank deposition)
-    :param v_coarse: deposition rate of coarse sediment, in m/year (for overbank deposition)
-    :param dt: time step (in seconds)
-    :return levee: thickness of levee layer (same size as 'topo')"""
+    """
+    Function for creating a levee layer in a submarine 3D model based on the diffusion-based overbank deposition model of Howard, 1992.
+
+    Parameters
+    ----------
+    h_mud : float
+        Maximum thickness of overbank deposit (specific to time step).
+    cl_dist : ndarray
+        Distance map (distance from centerline).
+    topo : ndarray
+        Current topographic surface.
+    E_max : float
+        Maximum thickness of overbank deposit (specific to location).
+    w : float
+        Channel width.
+    diff_scale : float
+        Diffusion length scale.
+    v_fine : float
+        Deposition rate of fine sediment, in m/year (for overbank deposition).
+    v_coarse : float
+        Deposition rate of coarse sediment, in m/year (for overbank deposition).
+    dt : float
+        Time step (in seconds).
+
+    Returns
+    -------
+    levee : ndarray
+        Thickness of levee layer (same size as 'topo').
+    """
     dep_rate = (E_max - topo) * (v_fine + v_coarse * np.exp(-cl_dist/diff_scale))
     dep_rate[dep_rate < 0] = 0
     levee = dep_rate * (dt/(365*24*60*60))
@@ -903,20 +1356,44 @@ def submarine_levee(h_mud, cl_dist, topo, E_max, w, diff_scale, v_fine, v_coarse
     return levee
 
 def topostrat(topo):
-    """function for converting a stack of geomorphic surfaces into stratigraphic surfaces
-    :param topo: 3D numpy array of geomorphic surfaces, with the oldest at index 0
-    :return strat: 3D numpy array of stratigraphic surfaces, with the oldest at index 0
-    assumption is that topographic array has oldest surface at '0' z (third) index and therefore needs to be flipped twice
+    """
+    Convert a stack of geomorphic surfaces into stratigraphic surfaces.
+
+    Parameters
+    ----------
+    topo : numpy.ndarray
+        3D numpy array of geomorphic surfaces, with the oldest at index 0.
+
+    Returns
+    -------
+    strat : numpy.ndarray
+        3D numpy array of stratigraphic surfaces, with the oldest at index 0.
+
+    Notes
+    -----
+    The assumption is that the topographic array has the oldest surface at the '0' z (third) index and therefore needs to be flipped twice.
     """
     strat = np.minimum.accumulate(topo[:, :, ::-1], axis=2)[:, :, ::-1] # this eliminates the 'for' loop and is therefore faster
     return strat
 
 def eliminate_bad_pixels(img, img1):
-    """function for removing 'bad' pixels along channel centerline
-    :param img: black-and-white image of channel centerline (centerline pixels are 0)
-    :param img1: dilated version of centerline image 'img'
-    :return x_pix: cleaned array of x pixel xoordinates
-    :return y_pix: cleaned array of y pixel xoordinates"""
+    """
+    Function for removing 'bad' pixels along channel centerline.
+
+    Parameters
+    ----------
+    img : ndarray
+        Black-and-white image of channel centerline (centerline pixels are 0).
+    img1 : ndarray
+        Dilated version of centerline image 'img'.
+
+    Returns
+    -------
+    x_pix : ndarray
+        Cleaned array of x pixel coordinates.
+    y_pix : ndarray
+        Cleaned array of y pixel coordinates.
+    """
     x_ind = np.where(img1==0)[1][0]
     y_ind = np.where(img1==0)[0][0]
     img[y_ind:y_ind+2,x_ind:x_ind+2] = np.ones(1,).astype(np.uint8)
@@ -927,15 +1404,35 @@ def eliminate_bad_pixels(img, img1):
     y_pix,x_pix = np.where(cl==1)
     return x_pix, y_pix
 
-def order_cl_pixels(x_pix,y_pix):
-    '''function for ordering pixels along a channel centerline, starting on the left side
-    :param x_pix: unordered x pixel coordinates of the centerline
-    :param y_pix: unordered y pixel coordinates of the centerline
-    :return x_pix: ordered x pixel coordinates of the centerline
-    :return y_pix: ordered y pixel coordinates of the centerline'''
+def order_cl_pixels(x_pix, y_pix, img):
+    """
+    Function for ordering pixels along a channel centerline, starting on the left side.
+
+    Parameters
+    ----------
+    x_pix : array_like
+        Unordered x pixel coordinates of the centerline.
+    y_pix : array_like
+        Unordered y pixel coordinates of the centerline.
+    img : array_like
+        Image array used to determine the distances from the edges.
+
+    Returns
+    -------
+    x_pix : array_like
+        Ordered x pixel coordinates of the centerline.
+    y_pix : array_like
+        Ordered y pixel coordinates of the centerline.
+    """
     dist = distance.cdist(np.array([x_pix,y_pix]).T,np.array([x_pix,y_pix]).T)
     dist[np.diag_indices_from(dist)]=100.0
-    ind = np.argmin(x_pix) # select starting point on left side of image
+    # ind = np.argmin(x_pix) # select starting point on left side of image
+    x_pix_dist_from_edges = np.shape(img)[1] - max(x_pix) + min(x_pix)
+    y_pix_dist_from_edges = np.shape(img)[0] - max(y_pix) + min(y_pix)
+    if x_pix_dist_from_edges <= y_pix_dist_from_edges:
+        ind = np.argmin(x_pix) # select starting point on left side of image
+    else:
+        ind = np.argmin(y_pix) # select starting point on lower side of image 
     clinds = [ind]
     count = 0
     while count<len(x_pix):
@@ -949,3 +1446,304 @@ def order_cl_pixels(x_pix,y_pix):
     x_pix = x_pix[clinds]
     y_pix = y_pix[clinds]
     return x_pix,y_pix
+
+def save_3d_chb_to_hdf5(chb_3d, fname):
+    """
+    Save a 3D channelbelt model as an HDF5 file.
+
+    Parameters
+    ----------
+    chb_3d : ChannelBelt3D
+        The ChannelBelt3D object to be saved.
+    fname : str
+        The filename for the HDF5 file.
+    """
+    f = h5py.File(fname,'w')
+    grp = f.create_group('model')
+    grp.create_dataset('dx', data = chb_3d.dx)
+    grp.create_dataset('topo', data = chb_3d.topo)
+    grp.create_dataset('strat', data = chb_3d.strat)
+    grp.create_dataset('facies', data = chb_3d.facies)
+    for key in chb_3d.facies_code.keys():
+        grp.create_dataset(chb_3d.facies_code[key], data = key)
+    grp = f.create_group('channels')
+    depths = []; widths = []; xcoords = []; ycoords = []; zcoords = []; lengths = []
+    for channel in chb_3d.channels:
+        depths.append(channel.D)
+        widths.append(channel.W)
+        xcoords.append(channel.x)
+        ycoords.append(channel.y)
+        zcoords.append(channel.z)
+        lengths.append(len(channel.x))
+    x = np.nan * np.ones((len(xcoords), max(lengths)))
+    for i in range(len(xcoords)):
+        x[i, :len(xcoords[i])] = xcoords[i]
+    y = np.nan * np.ones((len(ycoords), max(lengths)))
+    for i in range(len(ycoords)):
+        y[i, :len(ycoords[i])] = ycoords[i]
+    z = np.nan * np.ones((len(zcoords), max(lengths)))
+    for i in range(len(zcoords)):
+        z[i, :len(zcoords[i])] = zcoords[i]
+    grp.create_dataset('depths', data = depths)    
+    grp.create_dataset('widths', data = widths)    
+    grp.create_dataset('x', data = x)
+    grp.create_dataset('y', data = y)
+    grp.create_dataset('z', data = z)
+    f.close()
+
+def read_3d_chb_from_hdf5(model_type, fname):
+    """
+    Function for reading 3D channelbelt model from an HDF5 file (that was saved using 'save_3d_chb_to_hdf5').
+
+    Parameters
+    ----------
+    model_type : str
+        Model type (can be 'fluvial' or 'submarine').
+    fname : str
+        Filename of the HDF5 file.
+
+    Returns
+    -------
+    ChannelBelt3D
+        ChannelBelt3D object that was created from the HDF5 file.
+    """
+    f = h5py.File(fname, 'r')
+    model  = f['model']
+    topo = np.array(model['topo'])
+    strat = np.array(model['strat'])
+    facies = np.array(model['facies'])
+    facies_code = {}
+    facies_code[int(np.array(model['point bar']))] = 'point bar'
+    facies_code[int(np.array(model['levee']))] = 'levee'
+    dx = float(np.array(model['dx']))
+    x = np.array(f['channels']['x'])
+    y = np.array(f['channels']['y'])
+    z = np.array(f['channels']['z'])
+    depths = np.array(f['channels']['depths'])
+    widths = np.array(f['channels']['widths'])
+    channels = []
+    for i in range(x.shape[0]):
+        x1 = x[i, :]
+        x1 = x1[np.isnan(x1) == 0]
+        y1 = y[i, :]
+        y1 = y1[np.isnan(y1) == 0]
+        z1 = z[i, :]
+        z1 = z1[np.isnan(z1) == 0]
+        channels.append(Channel(x1, y1, z1, widths[i], depths[i]))
+    chb_3d = ChannelBelt3D(model_type, topo, strat, facies, facies_code, dx, channels)
+    f.close()
+    return chb_3d
+
+def create_poro_perm(chb_3d, poro_max):
+    """
+    Generate porosity and permeability fields from 3D channelbelt model.
+
+    Parameters
+    ----------
+    chb_3d : ChannelBelt3D
+        A ChannelBelt3D object with these attributes:
+        - strat: 3D numpy array representing stratigraphy.
+        - topo: 3D numpy array representing topography.
+    poro_max : float
+        Maximum porosity value.
+
+    Returns
+    -------
+    porosity : numpy.ndarray
+        3D numpy array of porosity values.
+    permeability : numpy.ndarray
+        3D numpy array of permeability values.
+
+    Notes
+    -----
+    The function calculates porosity as a function of height above the thalweg (HAT) and assigns
+    permeability based on the calculated porosity. Areas with zero thickness are assigned zero porosity.
+    """
+    ny, nx, nz = np.shape(chb_3d.strat)
+    porosity = np.zeros((ny-1, nx-1, nz - 1))
+    for i in range(int((chb_3d.strat.shape[2] - 1)/2)): # only working with channel sands
+        hat = np.abs(chb_3d.topo[:, :, 3*i + 1] - np.min(chb_3d.topo[:, :, 3*i + 1])) # height above thalweg
+        th = chb_3d.topo[:, :, 3*i + 2] - chb_3d.topo[:, :, 3*i + 1] # thickness of channel deposit
+        hat[th == 0] = 100 # set a large HAT value where thickness is zero (we want zero porosity here)
+        t = 0.25*(hat[1:,1:]+hat[1:,:-1]+hat[:-1,1:]+hat[:-1,:-1]) # average HAT for porosity grid
+        t = t - np.min(t)
+        t[t > 30.0] = 30.0
+        # porosity is a function of elevation (the higher the elevation, the lower the porosity):
+        t = poro_max - poro_max*(t/30.0)
+        porosity[:, :, 2*i] = t # assign porosity
+    porosity[porosity > poro_max] = poro_max
+    permeability = 10**(17*porosity - 3)
+    permeability[porosity == 0] = 0
+    return porosity, permeability
+
+def save_3d_chb_to_generic_hdf5(chb_3d, props, prop_names, fname):
+    """
+    Save a 3D channelbelt model as an HDF5 file.
+
+    Parameters
+    ----------
+    chb_3d : ChannelBelt3D
+        ChannelBelt3D object to be saved.
+    props : list of ndarray
+        List of property arrays (e.g., porosity, permeability).
+    prop_names : list of str
+        List of property names corresponding to the property arrays.
+    fname : str
+        Filename for the HDF5 file.
+
+    Returns
+    -------
+    None
+    """
+    f = h5py.File(fname,'w')
+    grp = f.create_group('model')
+    grp.create_dataset('dx', data = chb_3d.dx)
+    grp.create_dataset('topo', data = chb_3d.topo)
+    grp.create_dataset('strat', data = chb_3d.strat)
+    grp.create_dataset('facies', data = chb_3d.facies)
+    count = 0
+    for prop in props:
+        grp.create_dataset(prop_names[count], data = prop)
+        count += 1
+    for key in chb_3d.facies_code.keys():
+        grp.create_dataset(chb_3d.facies_code[key], data = key)
+    f.close()
+
+def write_eclipse_grid(strat, porosity, permeability, dx, fname):
+    """
+    Function for exporting an Eclipse file ('.grdecl' format) from an array of stratigraphic surfaces ('strat') and an array of porosity ('porosity').
+    Additional 'keywords' like ACTNUM and SATNUM can be added the same way as porosity.
+
+    Ordering of cornerpoints for first (uppermost) surface in Eclipse:
+    ----------------------------------------
+    | 1        2 | 3        4 | 5        6 | 
+    |            |            |            |
+    | 7        8 | 9       10 | 11      12 |
+    ----------------------------------------
+    | 13      14 | 15      16 | 17      18 |
+    |            |            |            |
+    | 19      20 | 21      22 | 23      24 |
+    ----------------------------------------
+
+    Parameters
+    ----------
+    strat : numpy.ndarray
+        Stratigraphic surfaces (outputs from channel model).
+    porosity : numpy.ndarray
+        Porosity grid.
+    dx : float
+        Grid cell size (in meters).
+    fname : str
+        Filename of the Eclipse file to be written.
+    """
+
+    # these swaps have to be done because the logic below was written for this ordering of the axes
+    surfs = np.swapaxes(strat, 0, 2) 
+    surfs = np.swapaxes(surfs, 1, 2)
+    porosity = np.swapaxes(porosity, 0, 2)
+    porosity = np.swapaxes(porosity, 1, 2)
+    permeability = np.swapaxes(permeability, 0, 2)
+    permeability = np.swapaxes(permeability, 1, 2)
+    
+    nz,ny,nx = np.shape(surfs);
+    nz=nz-1 # number of cells in z direction
+    ny=ny-1 # number of cells in y direction
+    nx=nx-1 # number of cells in x direction
+
+    dy=dx  # size of cells in x and y directions
+
+    print('creating cornerpoint array(ZCORN)')
+    zcorn = np.zeros((8*nx*ny*nz,))
+    for k in range(nz):
+        # write cornerpoints for the top of layer 'k':
+        surf = np.squeeze(surfs[k,:,:])
+        zc = np.zeros((2*ny,2*nx))
+        zc[::2,::2] = surf[:-1,:-1]
+        zc[1::2,1::2] = surf[1:,1:]
+        zc[1::2,::2] = surf[1:,:-1]
+        zc[::2,1::2] = surf[:-1,1:]
+        zc = np.reshape(zc,(1,4*nx*ny))
+        zcorn[(2*k)*4*nx*ny : (2*k+1)*4*nx*ny] = zc;
+        
+        # write cornerpoints for the bottom of layer 'k':
+        surf = np.squeeze(surfs[k+1,:,:])
+        zc = np.zeros((2*ny,2*nx));
+        zc[::2,::2] = surf[:-1,:-1]
+        zc[1::2,1::2] = surf[1:,1:]
+        zc[1::2,::2] = surf[1:,:-1]
+        zc[::2,1::2] = surf[:-1,1:]
+        zc = np.reshape(zc,(1,4*nx*ny))
+        zcorn[(2*k+1)*4*nx*ny : (2*k+2)*4*nx*ny] = zc
+    zcorn = np.reshape(zcorn, (int(len(zcorn)/8), 8))
+    zcorn = 100 * zcorn # convert meters to centimeters
+
+    print('creating pillar matrix (COORD)')
+    coord = np.zeros(((nx+1)*(ny+1),6));
+    for j in range(ny+1):
+        for i in range(nx+1):
+            coord[j*(nx+1)+i,0] = i*dx
+            coord[j*(nx+1)+i,1] = j*dy
+            coord[j*(nx+1)+i,2] = surfs[0,j,i] 
+            coord[j*(nx+1)+i,3] = i*dx
+            coord[j*(nx+1)+i,4] = j*dy
+            coord[j*(nx+1)+i,5] = surfs[-1,j,i]
+    coord = 100 * coord # convert meters to centimeters
+
+    print('creating porosity array (PORO)')
+    poro = np.zeros((nx*ny*nz,))
+    [i,j,k] = np.meshgrid(np.arange(nx),np.arange(ny),np.arange(nz))
+    ind1 = k*nx*ny + j*nx+i 
+    ind2 = np.ravel_multi_index((k,j,i),(nz,ny,nx))
+    poro[ind1] = porosity.flatten()[ind2]
+    if np.mod(len(poro),8)==0: # if length of porosity array is a multiple of 8
+        poro_1 = np.reshape(poro, (int(len(poro)/8), 8))
+    else:
+        poro_1 = np.reshape(poro[:-np.mod(len(poro),8)], (int(len(poro)/8), 8))
+
+    print('creating permeability array (PERM)')
+    perm = np.zeros((nx*ny*nz,))
+    perm[ind1] = permeability.flatten()[ind2]
+    if np.mod(len(perm),8)==0: # if length of porosity array is a multiple of 8
+        perm_1 = np.reshape(perm, (int(len(perm)/8), 8))
+    else:
+        perm_1 = np.reshape(perm[:-np.mod(len(perm),8)], (int(len(perm)/8), 8))
+    
+    # write file:
+    fid = open(fname, 'a')
+    fid.write('SPECGRID\n')
+    fid.write('%d %d %d' %(nx, ny, nz) + ' 1 F /\n')
+    fid.write('COORD\n')
+    print('writing pillars...')
+    for i in range(coord.shape[0]):
+        fid.write('%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f\n' %tuple(coord[i,:]))
+    fid.write('/\n')
+    fid.write(' ')
+    fid.write('\n')
+    fid.write('ZCORN\n')
+    print('writing zcorns...')
+    for i in range(zcorn.shape[0]):
+        fid.write('%6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f %6.3f\n' %tuple(zcorn[i,:]))
+    fid.write('/\n')
+    fid.write(' ')
+    fid.write('\n')
+    fid.write('PORO\n')
+    print('writing porosity...')
+    for i in range(poro_1.shape[0]):
+        fid.write('%6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f\n' %tuple(poro_1[i,:]))
+    if np.mod(len(poro),8)!=0: # if length of porosity array is not a multiple of 8
+        for i in range(np.mod(len(poro),8)):
+            fid.write('%6.4f ' %poro[-np.mod(len(poro),8):][i])
+        fid.write('\n')
+    fid.write('/\n')
+    fid.write(' ')
+    fid.write('\n')
+    fid.write('PERMX\n')
+    print('writing permeability...')
+    for i in range(perm_1.shape[0]):
+        fid.write('%6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f %6.4f\n' %tuple(perm_1[i,:]))
+    if np.mod(len(perm),8)!=0: # if length of porosity array is not a multiple of 8
+        for i in range(np.mod(len(perm),8)):
+            fid.write('%6.4f ' %perm[-np.mod(len(perm),8):][i])
+        fid.write('\n')
+    fid.write('/\n')
+    fid.close()
