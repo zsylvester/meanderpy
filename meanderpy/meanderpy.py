@@ -561,7 +561,7 @@ def build_3d_model(chb, model_type, h_mud, h, w, dx, delta_s, dt, starttime, end
     topoinit = z1[0] - ((z1[0] - z1[-1]) / (xmax - xmin)) * xv * dx # initial (sloped) topography
     topo[:,:,0] = topoinit.copy()
     surf = topoinit.copy()
-    facies[0] = np.NaN
+    facies[0] = np.nan
     # generate surfaces:
     channels3D = []
     for i in trange(n_steps):
@@ -580,7 +580,7 @@ def build_3d_model(chb, model_type, h_mud, h, w, dx, delta_s, dt, starttime, end
         topo[:,:,3*i] = surf # erosional surface
         dists[:,:,i] = cl_dist # distance map
         zmaps[:,:,i] = z_map # map of closest channel elevation
-        facies[3*i] = np.NaN # array for facies code
+        facies[3*i] = np.nan # array for facies code
 
         if model_type == 'fluvial':
             z_map = gaussian_filter(z_map, sigma=50) # smooth z_map to avoid artefacts in levees
@@ -982,11 +982,11 @@ def find_cutoffs(x,y,crdist,deltas):
     diag_blank_width = int((crdist+20*deltas)/deltas)
     # distance matrix for centerline points:
     dist = distance.cdist(np.array([x,y]).T,np.array([x,y]).T)
-    dist[dist>crdist] = np.NaN # set all values that are larger than the cutoff threshold to NaN
+    dist[dist>crdist] = np.nan # set all values that are larger than the cutoff threshold to NaN
     # set matrix to NaN along the diagonal zone:
     for k in range(-diag_blank_width,diag_blank_width+1):
         rows, cols = kth_diag_indices(dist,k)
-        dist[rows,cols] = np.NaN
+        dist[rows,cols] = np.nan
     i1, i2 = np.where(~np.isnan(dist))
     ind1 = i1[np.where(i1<i2)[0]] # get rid of unnecessary indices
     ind2 = i2[np.where(i1<i2)[0]] # get rid of unnecessary indices
