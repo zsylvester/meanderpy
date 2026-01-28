@@ -6,10 +6,10 @@ from scipy import ndimage
 from PIL import Image, ImageDraw
 from skimage import measure
 from skimage import morphology
-# from skimage import filters
 from scipy.ndimage import gaussian_filter
 from matplotlib.colors import LinearSegmentedColormap
 import time, sys
+import warnings
 import numba
 import matplotlib.colors as mcolors
 from matplotlib import cm
@@ -193,7 +193,7 @@ class ChannelBelt:
         self.cl_times = cl_times
         self.cutoff_times = cutoff_times
 
-    def migrate(self, nit, saved_ts, deltas, pad, crdist, depths, Cfs, kl, kv, dt, dens, autoaggradation=True, Scr=0.001, t1=None, t2=None, t3=None, aggr_factor=None):
+    def migrate(self, nit, saved_ts, deltas, pad, crdist, depths, Cfs, kl, kv, dt, dens, autoaggradation=True, Scr=0.001, t1=None, t2=None, t3=None, aggr_factor=None, cfl_factor=0.5):
         """
         Compute migration rates along channel centerlines and move the centerlines accordingly.
 
@@ -233,6 +233,9 @@ class ChannelBelt:
             Time step when aggradation starts. Default is None.
         aggr_factor : float, optional
             Aggradation factor. Default is None.
+        cfl_factor : float, optional
+            CFL safety factor for numerical stability (default 0.5). Migration displacement
+            per time step is clamped to cfl_factor * deltas. Set to None to disable clamping.
         """
 
         channel = self.channels[-1] # first channel is the same as last channel of input
@@ -255,8 +258,8 @@ class ChannelBelt:
         for itn in trange(nit): # main loop
             D = depths[itn]
             Cf = Cfs[itn]
-            x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1)
-            # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1)
+            x, y = migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,deltas=deltas,cfl_factor=cfl_factor)
+            # x, y = migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,deltas=deltas,cfl_factor=cfl_factor)
             x,y,z,xc,yc,zc = cut_off_cutoffs(x,y,z,s,crdist,deltas) # find and execute cutoffs
             x,y,z,dx,dy,dz,ds,s = resample_centerline(x,y,z,deltas) # resample centerline
             z = savgol_filter(z, 21, 2) # filter z-values - needed for autoaggradation
@@ -294,7 +297,7 @@ class ChannelBelt:
                 channel = Channel(x,y,z,W,D) # create channel object
                 self.channels.append(channel)
 
-    def plot(self, plot_type, pb_age, ob_age, end_time, n_channels):
+    def plot(self, plot_type, pb_age=20, ob_age=60, end_time=None, n_channels=None):
         """
         Method for plotting ChannelBelt object.
 
@@ -302,13 +305,15 @@ class ChannelBelt:
         ----------
         plot_type : str
             Can be either 'strat' (for stratigraphic plot), 'morph' (for morphologic plot), or 'age' (for age plot).
-        pb_age : int
+        pb_age : int, optional
             Age of point bars (in years) at which they get covered by vegetation.
-        ob_age : int
+            Only used when plot_type='morph'. Default is 20.
+        ob_age : int, optional
             Age of oxbow lakes (in years) at which they get covered by vegetation.
-        end_time : int
-            Age of last channel to be plotted (in years).
-        n_channels : int
+            Only used when plot_type='morph'. Default is 60.
+        end_time : int, optional
+            Age of last channel to be plotted (in years). Default is the last channel time.
+        n_channels : int, optional
             Total number of channels (used in 'age' plots; can be larger than number of channels being plotted).
 
         Returns
@@ -316,7 +321,11 @@ class ChannelBelt:
         fig : matplotlib.figure.Figure
             Handle to the figure.
         """
-
+        # Set default end_time if not provided
+        if end_time is None:
+            end_time = self.cl_times[-1]
+        if n_channels is None:
+            n_channels = len(self.channels)
         cot = np.array(self.cutoff_times)
         sclt = np.array(self.cl_times)
         if end_time>0:
@@ -345,7 +354,7 @@ class ChannelBelt:
             ob_cmap = make_colormap([green,green,ob_crit,green,ob_color,1.0,ob_color]) # colormap for oxbows
             plt.fill([xmin,xmax,xmax,xmin],[ymin,ymin,ymax,ymax],color=(106/255.0,159/255.0,67/255.0))
         if plot_type == 'age':
-            age_cmap = cm.get_cmap('magma', n_channels)
+            age_cmap = cm.get_cmap('magma', len(times))
         for i in range(0,len(times)):
             if times[i] in sclt:
                 ind = np.where(sclt==times[i])[0][0]
@@ -364,7 +373,7 @@ class ChannelBelt:
                     # plt.fill(xm, ym, 'xkcd:light tan', edgecolor='none', linewidth=0.25, zorder=order)
                 if plot_type == 'age':
                     order += 1
-                    plt.fill(xm,ym,facecolor=age_cmap(i/float(n_channels-1)),edgecolor='k',linewidth=0.1,zorder=order)
+                    plt.fill(xm,ym,facecolor=age_cmap(i/float(len(times)-1)),edgecolor='k',linewidth=0.1,zorder=order)
             if times[i] in cot:
                 ind = np.where(cot==times[i])[0][0]
                 for j in range(0,len(self.cutoffs[ind].x)):
@@ -397,7 +406,7 @@ class ChannelBelt:
         plt.tight_layout()
         return fig
 
-    def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age, ob_age, end_time, n_channels):
+    def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age=20, ob_age=60, end_time=None, n_channels=None):
         """
         Method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time.
         The movie has to be assembled from the PNG files after this method is applied.
@@ -414,17 +423,20 @@ class ChannelBelt:
             First few characters of the output filenames.
         dirname : str
             Name of the directory where output files should be written.
-        pb_age : int
-            Age of point bars (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type').
-        ob_age : int
-            Age of oxbow lakes (in years) at which they get covered by vegetation (if the 'morph' option is used for 'plot_type').
-        end_time : float or list of float
-            Time at which the simulation should be stopped.
-        n_channels : int
+        pb_age : int, optional
+            Age of point bars (in years) at which they get covered by vegetation.
+            Only used when plot_type='morph'. Default is 20.
+        ob_age : int, optional
+            Age of oxbow lakes (in years) at which they get covered by vegetation.
+            Only used when plot_type='morph'. Default is 60.
+        end_time : float or list of float, optional
+            Time at which the simulation should be stopped. Default is the last channel time.
+        n_channels : int, optional
             Total number of channels + cutoffs for which the simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'.
 
         """
-
+        if end_time is None:
+            end_time = self.cl_times[-1]
         sclt = np.array(self.cl_times)
         if type(end_time) != list:
             sclt = sclt[sclt<=end_time]
@@ -615,8 +627,6 @@ def build_3d_model(chb, model_type, h_mud, h, w, dx, delta_s, dt, starttime, end
             surf = surf+th # update topographic surface with sand thickness
             topo[:,:,3*i+1] = surf # top of sand
             facies[3*i+1] = 1 # facies code for channel sand
-            # need to blur z-map so that levees don't have artefacts:
-            # blurred = filters.gaussian(z_map, sigma=(50, 50), truncate=3.5, multichannel=False)
             E_max = z_map + h_mud[i]
             levee = submarine_levee(h_mud[i], cl_dist, surf, E_max, w/dx, diff_scale, v_fine, v_coarse, dt)
             surf = surf + levee # mud/levee deposition
@@ -679,7 +689,7 @@ def resample_centerline(x,y,z,deltas):
     dx, dy, dz, ds, s = compute_derivatives(x,y,z) # recompute derivatives
     return x,y,z,dx,dy,dz,ds,s
 
-def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
+def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5,deltas=None,cfl_factor=0.5):
     """
     Migrate centerline during one time step, using the migration computed as in Howard & Knutson (1984).
 
@@ -711,6 +721,10 @@ def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
         Constant in Howard & Knutson equation (= -1.0).
     gamma : float
         Constant in Howard & Knutson equation (= 2.5).
+    deltas : float, optional
+        Centerline point spacing (m). If provided, used for CFL stability check.
+    cfl_factor : float, optional
+        CFL safety factor (default 0.5). Displacement is clamped to cfl_factor * deltas.
 
     Returns
     -------
@@ -733,12 +747,76 @@ def migrate_one_step(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
     # calculate new centerline coordinates:
     dy_ds = dy[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
     dx_ds = dx[pad1:ns-pad+1]/ds[pad1:ns-pad+1]
+    # compute displacement components:
+    disp_x = R1[pad1:ns-pad+1]*dy_ds*dt
+    disp_y = -R1[pad1:ns-pad+1]*dx_ds*dt
+    # CFL stability check: clamp displacement if it exceeds threshold
+    if deltas is not None:
+        max_allowed = cfl_factor * deltas
+        disp_magnitude = np.sqrt(disp_x**2 + disp_y**2)
+        max_disp = np.max(disp_magnitude)
+        if max_disp > max_allowed:
+            warnings.warn(
+                f"CFL condition violated: max displacement ({max_disp:.3f} m) exceeds "
+                f"{cfl_factor:.1f} * deltas ({max_allowed:.3f} m). "
+                f"Clamping displacement. Consider reducing dt or kl.",
+                stacklevel=2
+            )
+            # clamp displacement while preserving direction
+            scale = np.where(disp_magnitude > max_allowed,
+                           max_allowed / np.maximum(disp_magnitude, 1e-10),
+                           1.0)
+            disp_x = disp_x * scale
+            disp_y = disp_y * scale
     # adjust x and y coordinates (this *is* the migration):
-    x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1]*dy_ds*dt  
-    y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1]*dx_ds*dt 
+    x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + disp_x
+    y[pad1:ns-pad+1] = y[pad1:ns-pad+1] + disp_y
     return x,y
 
-def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
+def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5,deltas=None,cfl_factor=0.5):
+    """
+    Migrate centerline during one time step with additional bias term.
+
+    Parameters
+    ----------
+    x : array_like
+        x-coordinates of centerline.
+    y : array_like
+        y-coordinates of centerline.
+    z : array_like
+        z-coordinates of centerline.
+    W : float
+        Channel width.
+    kl : float
+        Migration rate (or erodibility) constant (m/s).
+    dt : float
+        Duration of time step (s).
+    k : float
+        Constant for calculating the exponent alpha (= 1.0).
+    Cf : float
+        Dimensionless Chezy friction factor.
+    D : float
+        Channel depth.
+    pad : int
+        Padding parameter for migration rate computation.
+    pad1 : int
+        Padding parameter for centerline adjustment.
+    omega : float
+        Constant in Howard & Knutson equation (= -1.0).
+    gamma : float
+        Constant in Howard & Knutson equation (= 2.5).
+    deltas : float, optional
+        Centerline point spacing (m). If provided, used for CFL stability check.
+    cfl_factor : float, optional
+        CFL safety factor (default 0.5). Displacement is clamped to cfl_factor * deltas.
+
+    Returns
+    -------
+    x : array_like
+        New x-coordinates of centerline after migration.
+    y : array_like
+        New y-coordinates of centerline after migration.
+    """
     ns=len(x)
     curv = compute_curvature(x,y)
     dx, dy, dz, ds, s = compute_derivatives(x,y,z)
@@ -755,9 +833,30 @@ def migrate_one_step_w_bias(x,y,z,W,kl,dt,k,Cf,D,pad,pad1,omega=-1.0,gamma=2.5):
     tilt_factor = 0.2
     T = kl*tilt_factor*np.ones(np.shape(x))
     angle = 90.0
+    # compute displacement components (migration + bias):
+    disp_x = R1[pad1:ns-pad+1] * dy_ds * dt + T[pad1:ns-pad+1] * dy_ds * dt * (np.sin(np.deg2rad(angle)) * dx_ds + np.cos(np.deg2rad(angle)) * dy_ds)
+    disp_y = -R1[pad1:ns-pad+1] * dx_ds * dt - T[pad1:ns-pad+1] * dx_ds * dt * (np.sin(np.deg2rad(angle)) * dx_ds + np.cos(np.deg2rad(angle)) * dy_ds)
+    # CFL stability check: clamp displacement if it exceeds threshold
+    if deltas is not None:
+        max_allowed = cfl_factor * deltas
+        disp_magnitude = np.sqrt(disp_x**2 + disp_y**2)
+        max_disp = np.max(disp_magnitude)
+        if max_disp > max_allowed:
+            warnings.warn(
+                f"CFL condition violated: max displacement ({max_disp:.3f} m) exceeds "
+                f"{cfl_factor:.1f} * deltas ({max_allowed:.3f} m). "
+                f"Clamping displacement. Consider reducing dt or kl.",
+                stacklevel=2
+            )
+            # clamp displacement while preserving direction
+            scale = np.where(disp_magnitude > max_allowed,
+                           max_allowed / np.maximum(disp_magnitude, 1e-10),
+                           1.0)
+            disp_x = disp_x * scale
+            disp_y = disp_y * scale
     # adjust x and y coordinates (this *is* the migration):
-    x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + R1[pad1:ns-pad+1] * dy_ds * dt + T[pad1:ns-pad+1] * dy_ds * dt * (np.sin(np.deg2rad(angle)) * dx_ds + np.cos(np.deg2rad(angle)) * dy_ds)
-    y[pad1:ns-pad+1] = y[pad1:ns-pad+1] - R1[pad1:ns-pad+1] * dx_ds * dt - T[pad1:ns-pad+1] * dx_ds * dt * (np.sin(np.deg2rad(angle)) * dx_ds + np.cos(np.deg2rad(angle)) * dy_ds)
+    x[pad1:ns-pad+1] = x[pad1:ns-pad+1] + disp_x
+    y[pad1:ns-pad+1] = y[pad1:ns-pad+1] + disp_y
     return x,y
 
 def generate_initial_channel(W,D,Sl,deltas,pad,n_bends):
@@ -979,7 +1078,8 @@ def find_cutoffs(x,y,crdist,deltas):
     ind2 : ndarray
         Indices of the second set of cutoff points.
     """
-    diag_blank_width = int((crdist+20*deltas)/deltas)
+    # diag_blank_width = int((crdist+20*deltas)/deltas)
+    diag_blank_width = np.array((crdist + 20*deltas)/deltas, dtype=int)
     # distance matrix for centerline points:
     dist = distance.cdist(np.array([x,y]).T,np.array([x,y]).T)
     dist[dist>crdist] = np.nan # set all values that are larger than the cutoff threshold to NaN
