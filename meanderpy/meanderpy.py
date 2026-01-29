@@ -1432,15 +1432,15 @@ def dist_map(x, y, z, xmin, xmax, ymin, ymax, dx, delta_s):
     img = np.array(img)
     img = img[:,:,0]
     img[img==255] = 1 
-    img1 = morphology.binary_dilation(img, morphology.square(2)).astype(np.uint8)
+    img1 = morphology.dilation(img, morphology.square(2)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
         x_pix, y_pix = eliminate_bad_pixels(img, img1)
         x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img) 
-    img1 = morphology.binary_dilation(img, np.array([[1,0,1], [1,1,1]], dtype=np.uint8)).astype(np.uint8)
+    img1 = morphology.dilation(img, np.array([[1,0,1], [1,1,1]], dtype=np.uint8)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
         x_pix, y_pix = eliminate_bad_pixels(img,img1)
         x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img)
-    img1 = morphology.binary_dilation(img, np.array([[1,0,1], [0,1,0], [1,0,1]], dtype=np.uint8)).astype(np.uint8)
+    img1 = morphology.dilation(img, np.array([[1,0,1], [0,1,0], [1,0,1]], dtype=np.uint8)).astype(np.uint8)
     if len(np.where(img1==0)[0])>0:
         x_pix, y_pix = eliminate_bad_pixels(img, img1)
         x_pix,y_pix = order_cl_pixels(x_pix, y_pix, img)
