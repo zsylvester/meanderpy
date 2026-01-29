@@ -406,10 +406,10 @@ class ChannelBelt:
         plt.tight_layout()
         return fig
 
-    def create_movie(self, xmin, xmax, plot_type, filename, dirname, pb_age=20, ob_age=60, end_time=None, n_channels=None):
+    def create_movie(self, xmin, xmax, plot_type, filename, dirname=None, pb_age=20, ob_age=60,
+                     end_time=None, n_channels=None, fps=10, dpi=150, scale_bar_length=5000):
         """
-        Method for creating movie frames (PNG files) that capture the plan-view evolution of a channel belt through time.
-        The movie has to be assembled from the PNG files after this method is applied.
+        Create an animation (MP4 or GIF) capturing the plan-view evolution of a channel belt through time.
 
         Parameters
         ----------
@@ -418,49 +418,210 @@ class ChannelBelt:
         xmax : float
             Value of x coordinate on the right side of the frame.
         plot_type : str
-            Plot type; can be either 'strat' (for stratigraphic plot) or 'morph' (for morphologic plot).
+            Plot type; can be either 'strat' (for stratigraphic plot), 'morph' (for morphologic plot), or 'age' (for age plot).
         filename : str
-            First few characters of the output filenames.
-        dirname : str
-            Name of the directory where output files should be written.
+            Output filename. Should end with '.mp4' or '.gif'. If dirname is provided, filename should be just the base name.
+        dirname : str, optional
+            Directory where output file should be written. If None, filename should include the full path.
         pb_age : int, optional
             Age of point bars (in years) at which they get covered by vegetation.
             Only used when plot_type='morph'. Default is 20.
         ob_age : int, optional
             Age of oxbow lakes (in years) at which they get covered by vegetation.
             Only used when plot_type='morph'. Default is 60.
-        end_time : float or list of float, optional
+        end_time : float, optional
             Time at which the simulation should be stopped. Default is the last channel time.
         n_channels : int, optional
-            Total number of channels + cutoffs for which the simulation is run (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type = 'age'.
+            Total number of channels + cutoffs for which the simulation is run
+            (usually it is len(chb.cutoffs) + len(chb.channels)). Used when plot_type='age'.
+        fps : int, optional
+            Frames per second for the animation. Default is 10.
+        dpi : int, optional
+            Resolution of the animation in dots per inch. Default is 150.
+        scale_bar_length : float, optional
+            Length of the scale bar in the same units as x/y coordinates. Default is 5000.
 
+        Returns
+        -------
+        anim : matplotlib.animation.FuncAnimation
+            The animation object.
         """
+        from matplotlib.animation import FuncAnimation, FFMpegWriter, PillowWriter
+
         if end_time is None:
             end_time = self.cl_times[-1]
+
         sclt = np.array(self.cl_times)
-        if type(end_time) != list:
-            sclt = sclt[sclt<=end_time]
+        cot = np.array(self.cutoff_times)
+
+        if not isinstance(end_time, list):
+            sclt = sclt[sclt <= end_time]
+            cot = cot[cot <= end_time]
+
         channels = self.channels[:len(sclt)]
+
+        # Calculate fixed y-extent based on ALL channels to be plotted
         ymax = 0
         for i in range(len(channels)):
             ymax = max(ymax, np.max(np.abs(channels[i].y)))
-        ymax = ymax+2*channels[0].W # add a bit of space on top and bottom
-        ymin = -1*ymax
-        for i in range(0,len(sclt)):
-            fig = self.plot(plot_type, pb_age, ob_age, sclt[i], n_channels)
-            scale = 1
-            fig_height = scale*fig.get_figheight()
-            fig_width = (xmax-xmin)*fig_height/(ymax-ymin)
-            fig.set_figwidth(fig_width)
-            fig.set_figheight(fig_height)
-            fig.gca().set_xlim(xmin,xmax)
-            fig.gca().set_xticks([])
-            fig.gca().set_yticks([])
-            plt.plot([xmin+200, xmin+200+5000],[ymin+200, ymin+200], 'k', linewidth=2)
-            plt.text(xmin+200+2000, ymin+200+100, '5 km', fontsize=14)
-            fname = dirname+filename+'%03d.png'%(i)
-            fig.savefig(fname, bbox_inches='tight')
-            plt.close()
+        ymax = ymax + 2 * channels[0].W  # add padding
+        ymin = -ymax
+
+        # Combine and sort times for proper ordering
+        times_all = np.sort(np.unique(np.hstack((cot, sclt))))
+
+        if n_channels is None:
+            n_channels = len(self.channels)
+
+        # Set up figure with fixed dimensions
+        # Constrain figure size to avoid video encoder issues (max ~4000 pixels at common DPIs)
+        aspect_ratio = (xmax - xmin) / (ymax - ymin)
+        max_width_inches = 12  # At 150 dpi, this gives 1800 pixels wide
+        max_height_inches = 8
+
+        if aspect_ratio > max_width_inches / max_height_inches:
+            # Width-constrained
+            fig_width = max_width_inches
+            fig_height = fig_width / aspect_ratio
+        else:
+            # Height-constrained
+            fig_height = max_height_inches
+            fig_width = fig_height * aspect_ratio
+
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+
+        # Colors and colormaps for different plot types
+        green = (106/255.0, 159/255.0, 67/255.0)
+        pb_color = (189/255.0, 153/255.0, 148/255.0)
+        ob_color = (15/255.0, 58/255.0, 65/255.0)
+        channel_color = (16/255.0, 73/255.0, 90/255.0)
+
+        # Scale bar position (fixed relative to axes limits)
+        sb_x = xmin + 0.05 * (xmax - xmin)
+        sb_y = ymin + 0.08 * (ymax - ymin)
+        sb_text_y = sb_y + 0.02 * (ymax - ymin)
+
+        # Format scale bar label
+        if scale_bar_length >= 1000:
+            sb_label = f'{int(scale_bar_length/1000)} km'
+        else:
+            sb_label = f'{int(scale_bar_length)} m'
+
+        def init():
+            ax.set_xlim(xmin, xmax)
+            ax.set_ylim(ymin, ymax)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_aspect('equal')
+            return []
+
+        def animate(frame_idx):
+            ax.clear()
+            ax.set_xlim(xmin, xmax)
+            ax.set_ylim(ymin, ymax)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_aspect('equal')
+
+            current_time = sclt[frame_idx]
+            times = times_all[times_all <= current_time]
+
+            # For morph plot, set up colormaps based on current time
+            if plot_type == 'morph':
+                ax.fill([xmin, xmax, xmax, xmin], [ymin, ymin, ymax, ymax], color=green)
+                pb_crit = len(times[times < times[-1] - pb_age]) / float(max(len(times), 1))
+                ob_crit = len(times[times < times[-1] - ob_age]) / float(max(len(times), 1))
+                pb_cmap = make_colormap([green, green, pb_crit, green, pb_color, 1.0, pb_color])
+                ob_cmap = make_colormap([green, green, ob_crit, green, ob_color, 1.0, ob_color])
+
+            if plot_type == 'age':
+                age_cmap = cm.get_cmap('magma', len(times))
+
+            order = 0
+            for i, t in enumerate(times):
+                if t in sclt:
+                    ind = np.where(sclt == t)[0][0]
+                    x1 = self.channels[ind].x
+                    y1 = self.channels[ind].y
+                    W = self.channels[ind].W
+                    xm, ym = get_channel_banks(x1, y1, W)
+
+                    if plot_type == 'morph':
+                        if t > times[-1] - pb_age:
+                            ax.fill(xm, ym, facecolor=pb_cmap(i/float(max(len(times)-1, 1))),
+                                   edgecolor='k', linewidth=0.2)
+                        else:
+                            ax.fill(xm, ym, facecolor=pb_cmap(i/float(max(len(times)-1, 1))))
+                    elif plot_type == 'strat':
+                        order += 1
+                        ax.fill(xm, ym, 'xkcd:light tan', edgecolor='k', linewidth=0.25, zorder=order)
+                    elif plot_type == 'age':
+                        order += 1
+                        ax.fill(xm, ym, facecolor=age_cmap(i/float(max(len(times)-1, 1))),
+                               edgecolor='k', linewidth=0.1, zorder=order)
+
+                if t in cot:
+                    ind = np.where(cot == t)[0][0]
+                    for j in range(len(self.cutoffs[ind].x)):
+                        x1 = self.cutoffs[ind].x[j]
+                        y1 = self.cutoffs[ind].y[j]
+                        xm, ym = get_channel_banks(x1, y1, self.cutoffs[ind].W)
+
+                        if plot_type == 'morph':
+                            ax.fill(xm, ym, color=ob_cmap(i/float(max(len(times)-1, 1))))
+                        elif plot_type == 'strat':
+                            order += 1
+                            ax.fill(xm, ym, 'xkcd:ocean blue', edgecolor='k', linewidth=0.25, zorder=order)
+                        elif plot_type == 'age':
+                            order += 1
+                            ax.fill(xm, ym, 'xkcd:sea blue', edgecolor='k', linewidth=0.1, zorder=order)
+
+            # Draw current channel (water)
+            current_ch_idx = len(sclt[sclt <= current_time]) - 1
+            x1 = self.channels[current_ch_idx].x
+            y1 = self.channels[current_ch_idx].y
+            xm, ym = get_channel_banks(x1, y1, self.channels[current_ch_idx].W)
+            order += 1
+            if plot_type == 'age':
+                ax.fill(xm, ym, color='xkcd:sea blue', zorder=order, edgecolor='k', linewidth=0.1)
+            else:
+                ax.fill(xm, ym, color=channel_color, edgecolor='none', zorder=order)
+
+            # Draw scale bar (fixed position)
+            ax.plot([sb_x, sb_x + scale_bar_length], [sb_y, sb_y], 'k', linewidth=2, zorder=order+1)
+            ax.text(sb_x + scale_bar_length/2, sb_text_y, sb_label, fontsize=10,
+                   ha='center', va='bottom', zorder=order+1)
+
+            return []
+
+        # Create animation
+        n_frames = len(sclt)
+        anim = FuncAnimation(fig, animate, init_func=init, frames=n_frames,
+                            interval=1000/fps, blit=True)
+
+        # Determine output path
+        if dirname is not None:
+            import os
+            if not os.path.exists(dirname):
+                os.makedirs(dirname)
+            output_path = os.path.join(dirname, filename)
+        else:
+            output_path = filename
+
+        # Save animation
+        if output_path.lower().endswith('.gif'):
+            writer = PillowWriter(fps=fps)
+            anim.save(output_path, writer=writer, dpi=dpi)
+        else:
+            # Default to MP4
+            if not output_path.lower().endswith('.mp4'):
+                output_path += '.mp4'
+            writer = FFMpegWriter(fps=fps, bitrate=2000)
+            anim.save(output_path, writer=writer, dpi=dpi)
+
+        plt.close(fig)
+        print(f'Animation saved to: {output_path}')
+        return anim
 
 def build_3d_model(chb, model_type, h_mud, h, w, dx, delta_s, dt, starttime, endtime, diff_scale, v_fine, v_coarse, xmin=None, xmax=None, ymin=None, ymax=None, bth=None, dcr=None):
     """

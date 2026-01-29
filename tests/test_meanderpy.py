@@ -348,11 +348,15 @@ class TestGetChannelBanks:
         n = len(x)
 
         # For straight channel along x-axis, banks should be at y = +/- W/2
-        # First half is one bank, second half (reversed) is the other
-        # Check middle points of first bank (avoid edge effects)
-        assert np.allclose(ym[20:n-20], W/2, atol=5)
-        # Second half is reversed, so check from end
-        assert np.allclose(ym[n+20:-20], -W/2, atol=5)
+        # Based on the formula: y1 = y - 0.5*W*dx/ds (first bank, left side when looking downstream)
+        #                       y2 = y + 0.5*W*dx/ds (second bank, right side)
+        # For a channel going in +x direction, dx/ds ≈ 1, so:
+        #   y1 ≈ -W/2 (first half of ym)
+        #   y2 ≈ +W/2 (second half of ym, reversed)
+        # Check middle points to avoid edge effects
+        assert np.allclose(ym[20:n-20], -W/2, atol=5)
+        # Second half is y2 reversed
+        assert np.allclose(ym[n+20:-20], W/2, atol=5)
 
 
 class TestChannelBelt:
